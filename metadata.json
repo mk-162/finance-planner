@@ -1,0 +1,5 @@
+{
+  "name": "RetirePlan MVP",
+  "description": "A visual retirement scenario planner enabling users to project cash flow, assets, and shortfalls based on customizable financial inputs.",
+  "requestFramePermissions": []
+}
