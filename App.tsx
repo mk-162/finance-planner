@@ -19,6 +19,7 @@ import { AdditionalIncomeModal } from './components/AdditionalIncomeModal';
 import { AssetInput } from './components/AssetInput';
 import { DebouncedSlider } from './components/DebouncedSlider';
 import { ReviewModal } from './components/ReviewModal';
+import { StatusBanner } from './components/StatusBanner';
 import {
     ChevronRight,
     ChevronDown,
@@ -514,7 +515,7 @@ const App: React.FC = () => {
                                             Fee Warning
                                         </div>
                                         <div className="text-xs text-white mb-2 leading-relaxed">
-                                            High fees could cost you <span className="font-bold text-red-300">£{(totalOpportunityCost / 1000).toFixed(0)}k</span> in lost compound growth over your lifetime.
+                                            If you used a cheaper broker, the compound effect of these fees would be <span className="font-bold text-red-300">{formatLargeMoney(totalOpportunityCost)}</span> over duration of this plan.
                                         </div>
                                         <button className="w-full py-1.5 bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold rounded transition shadow-sm hover:shadow-md">
                                             Compare Platforms
@@ -1331,61 +1332,15 @@ const App: React.FC = () => {
                         </button>
                     </div>
 
-                    <div className="flex gap-3 md:gap-4 w-full md:w-auto items-center">
-                        {/* Slim Status Box */}
-                        {(() => {
-                            // Calculate margin status
-                            const isShortfall = fundsRunOutAge !== null;
-                            const isTightMargin = !isShortfall && totalNetWorthEnd > 0 && totalNetWorthEnd < inputs.annualSpending * 3;
-
-                            let statusColor = 'bg-green-50 border-green-200';
-                            let textColor = 'text-green-700';
-                            let label = 'Legacy';
-                            let value = totalNetWorthEnd;
-
-                            if (isShortfall) {
-                                statusColor = 'bg-red-50 border-red-200';
-                                textColor = 'text-red-600';
-                                label = `Shortfall at ${fundsRunOutAge}`;
-                                // Find the shortfall amount
-                                const shortfallResult = deferredResults.find(r => r.age === fundsRunOutAge);
-                                value = shortfallResult?.shortfall || 0;
-                            } else if (isTightMargin) {
-                                statusColor = 'bg-amber-50 border-amber-200';
-                                textColor = 'text-amber-700';
-                                label = 'Tight Margin';
-                            }
-
-                            return (
-                                <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border ${statusColor}`}>
-                                    {isShortfall ? (
-                                        <AlertTriangle size={20} className="text-red-500" />
-                                    ) : isTightMargin ? (
-                                        <AlertTriangle size={20} className="text-amber-500" />
-                                    ) : (
-                                        <ShieldCheck size={20} className="text-green-500" />
-                                    )}
-                                    <div className="flex flex-col">
-                                        <span className={`text-[10px] font-bold uppercase tracking-wide ${textColor}`}>
-                                            {label}
-                                        </span>
-                                        <span className={`text-lg font-extrabold ${textColor}`}>
-                                            {isShortfall ? `-${formatLargeMoney(value)}` : formatLargeMoney(value)}
-                                        </span>
-                                    </div>
-                                </div>
-                            );
-                        })()}
-
-                        {/* Review Plan Button */}
-                        <button
-                            onClick={() => setReviewModalOpen(true)}
-                            className="flex items-center gap-2 px-4 py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-xl transition-all"
-                        >
-                            <UserCheck size={18} />
-                            <span className="hidden md:inline">Review Plan</span>
-                        </button>
+                    {/* New Status Dashboard */}
+                    <div className="w-full md:w-auto flex-1 md:max-w-xl">
+                        <StatusBanner
+                            results={deferredResults}
+                            onReview={() => setReviewModalOpen(true)}
+                            annualSpending={inputs.annualSpending}
+                        />
                     </div>
+
                 </div>
 
                 {/* Chart View Config */}
@@ -1444,9 +1399,37 @@ const App: React.FC = () => {
                 </div>
 
                 {/* Main Chart Area */}
-                <div className="flex-1 px-2 md:px-6 pb-20 md:pb-6 pt-2 relative">
+                <div className="flex-1 px-2 md:px-6 pb-20 md:pb-6 pt-2 flex flex-col min-h-0">
 
-                    <div className="absolute inset-x-2 md:inset-x-6 inset-y-2 bottom-20 md:bottom-6 bg-white rounded-xl shadow-xl p-3 md:p-5">
+                    {/* Fee Warning Banner (>£100k) */}
+                    {(() => {
+                        const finalRes = deferredResults[deferredResults.length - 1];
+                        if (!finalRes || !finalRes.benchmarkPensionPot) return null;
+                        const totalOpportunityCost = finalRes.benchmarkPensionPot - finalRes.balancePension;
+
+                        if (totalOpportunityCost > 100000) {
+                            return (
+                                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between shadow-sm animate-in slide-in-from-top-2 flex-shrink-0">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-red-100 rounded-full flex-shrink-0">
+                                            <AlertTriangle size={20} className="text-red-500" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-bold text-red-800">Fee Warning</h4>
+                                            <p className="text-xs text-red-700 mt-0.5 max-w-xl">
+                                                If you used a cheaper broker, the compound effect of these fees would be <strong>{formatLargeMoney(totalOpportunityCost)}</strong> over duration of this plan.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button className="hidden sm:block px-4 py-2 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition shadow-sm">
+                                        Compare Platforms
+                                    </button>
+                                </div>
+                            );
+                        }
+                    })()}
+
+                    <div className="flex-1 bg-white rounded-xl shadow-xl p-3 md:p-5 min-h-0">
                         <ResultsChart
                             data={deferredResults}
                             mode={chartMode}
@@ -1582,7 +1565,7 @@ const App: React.FC = () => {
                 finalNetWorth={totalNetWorthEnd}
             />
 
-        </div>
+        </div >
     );
 };
 

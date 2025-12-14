@@ -27,6 +27,12 @@ export const DebouncedSlider: React.FC<DebouncedSliderProps> = ({
 }) => {
     const [localValue, setLocalValue] = useState(value);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const onChangeRef = useRef(onChange);
+
+    // Keep ref updated with latest callback
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    }, [onChange]);
 
     // Sync local state when external value changes
     useEffect(() => {
@@ -47,7 +53,9 @@ export const DebouncedSlider: React.FC<DebouncedSliderProps> = ({
             clearTimeout(timeoutRef.current);
         }
         timeoutRef.current = setTimeout(() => {
-            onChange(newValue);
+            if (onChangeRef.current) {
+                onChangeRef.current(newValue);
+            }
         }, debounceMs);
     };
 

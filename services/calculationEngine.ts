@@ -184,6 +184,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
     let potISA = val(inputs.savingsISA, 0);
     let potGIA = val(inputs.savingsGIA, 0);
     let potPension = val(inputs.savingsPension, 0) + val(inputs.savingsWorkplacePension, 0) + val(inputs.savingsSIPP, 0);
+    let shadowPensionPot = potPension; // Shadow pot for fee comparison
 
     // Initialize Property Values (BTL)
     let propertyBalances = new Map<string, number>();
@@ -660,7 +661,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         // Apply same cashflows to benchmark, but different fee structure
         // Note: We use the SAME withdrawal amount to see capital erosion impact,
         // rather than recalculating sustainable withdrawal.
-        potPensionBenchmark = (potPensionBenchmark * getGrowthFactor(grossPensionGrowth))
+        shadowPensionPot = (shadowPensionPot * getGrowthFactor(grossPensionGrowth))
             + (contribPensionYear * getMidYearGrowthFactor(grossPensionGrowth))
             + (surplusToPension * getMidYearGrowthFactor(grossPensionGrowth))
             - (withdrawalPensionGross * getMidYearGrowthFactor(grossPensionGrowth))
@@ -743,7 +744,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
             propertyValue: totalPropertyValue,
             liquidNetWorth: Math.max(0, potCash + potISA + potGIA),
             totalNetWorth: Math.max(0, potCash + potISA + potGIA + potPension + totalPropertyValue),
-            benchmarkPensionPot: Math.max(0, potPensionBenchmark)
+            benchmarkPensionPot: Math.max(0, shadowPensionPot)
         });
     }
 
