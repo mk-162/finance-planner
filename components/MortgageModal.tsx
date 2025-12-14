@@ -55,7 +55,7 @@ export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChang
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-white rounded-sm shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
 
                 {/* Header */}
                 <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -71,7 +71,7 @@ export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChang
                 <div className="p-6 overflow-y-auto">
 
                     {/* Add New Form */}
-                    <div className="bg-blue-50/50 p-4 rounded-xl mb-6 border border-blue-100 shadow-sm">
+                    <div className="bg-blue-50/50 p-4 rounded-sm mb-6 border border-blue-100 shadow-sm">
                         <div className="text-xs font-bold text-blue-800 uppercase mb-3 flex items-center gap-2">
                             <Plus size={14} /> Add New Mortgage
                         </div>
@@ -172,12 +172,12 @@ export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChang
                     {/* List */}
                     <div className="space-y-3">
                         {mortgages.length === 0 && (
-                            <p className="text-center text-slate-400 text-sm py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                            <p className="text-center text-slate-400 text-sm py-8 bg-slate-50 rounded-sm border border-dashed border-slate-200">
                                 No mortgages configured.
                             </p>
                         )}
                         {mortgages.map(m => (
-                            <div key={m.id} className="relative group bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md transition p-3">
+                            <div key={m.id} className="relative group bg-white border border-slate-200 rounded-sm shadow-sm hover:shadow-md transition p-3">
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="flex items-center gap-2">
                                         <div className="bg-blue-50 p-1.5 rounded text-blue-600">
@@ -216,6 +216,16 @@ export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChang
                             </div>
                         ))}
                     </div>
+                </div>
+
+                {/* Close Button */}
+                <div className="p-4 border-t border-slate-100 bg-slate-50">
+                    <button
+                        onClick={onClose}
+                        className="w-full bg-slate-900 text-white py-2.5 rounded-sm font-medium hover:bg-slate-800 transition"
+                    >
+                        Close
+                    </button>
                 </div>
             </div>
         </div>

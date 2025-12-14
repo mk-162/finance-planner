@@ -41,7 +41,7 @@ export const StrategyModal: React.FC<StrategyModalProps> = ({ isOpen, onClose, i
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-white rounded-sm shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-900 text-white">
           <h2 className="text-lg font-bold flex items-center gap-2">
             <Wallet size={20} />
@@ -64,7 +64,7 @@ export const StrategyModal: React.FC<StrategyModalProps> = ({ isOpen, onClose, i
 
                 <div className="space-y-2">
                     {currentOrder.map((target, index) => (
-                        <div key={target} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg shadow-sm">
+                        <div key={target} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-sm shadow-sm">
                             <div className="flex items-center gap-3">
                                 <div className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-xs font-bold">
                                     {index + 1}
@@ -101,7 +101,7 @@ export const StrategyModal: React.FC<StrategyModalProps> = ({ isOpen, onClose, i
 
                 <div className="space-y-3">
                     {/* Strategy C: Simple - shown first for novices */}
-                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${inputs.drawdownStrategy === 'standard' || !inputs.drawdownStrategy ? 'bg-emerald-50 border-emerald-200 ring-1 ring-emerald-500' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                    <label className={`flex items-start gap-3 p-3 rounded-sm border cursor-pointer transition ${inputs.drawdownStrategy === 'standard' || !inputs.drawdownStrategy ? 'bg-emerald-50 border-emerald-200 ring-1 ring-emerald-500' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
                         <div className="mt-0.5">
                             <input
                                 type="radio"
@@ -123,7 +123,7 @@ export const StrategyModal: React.FC<StrategyModalProps> = ({ isOpen, onClose, i
                     </label>
 
                     {/* Strategy A: Tax Efficient Bridge */}
-                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${inputs.drawdownStrategy === 'tax_efficient_bridge' ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-500' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                    <label className={`flex items-start gap-3 p-3 rounded-sm border cursor-pointer transition ${inputs.drawdownStrategy === 'tax_efficient_bridge' ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-500' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
                         <div className="mt-0.5">
                             <input
                                 type="radio"
@@ -144,7 +144,7 @@ export const StrategyModal: React.FC<StrategyModalProps> = ({ isOpen, onClose, i
                     </label>
 
                     {/* Strategy B: Preserve Pension */}
-                    <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${inputs.drawdownStrategy === 'preserve_pension' ? 'bg-amber-50 border-amber-200 ring-1 ring-amber-500' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
+                    <label className={`flex items-start gap-3 p-3 rounded-sm border cursor-pointer transition ${inputs.drawdownStrategy === 'preserve_pension' ? 'bg-amber-50 border-amber-200 ring-1 ring-amber-500' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
                         <div className="mt-0.5">
                             <input
                                 type="radio"
@@ -169,7 +169,7 @@ export const StrategyModal: React.FC<StrategyModalProps> = ({ isOpen, onClose, i
             <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end">
                 <button 
                     onClick={onClose}
-                    className="bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-slate-800 transition"
+                    className="bg-slate-900 text-white px-6 py-2 rounded-sm text-sm font-medium hover:bg-slate-800 transition"
                 >
                     Done
                 </button>

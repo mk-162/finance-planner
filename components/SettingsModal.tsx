@@ -2,6 +2,7 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { UserInputs, Scenario } from '../types';
+import { calculateProjection } from '../services/calculationEngine'; // Import engine
 import { X, Download, Upload, AlertTriangle, CheckCircle, RefreshCw, Plus, Trash2, Edit2, Check, User, Save, List, FileJson, Settings as SettingsIcon } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -34,7 +35,7 @@ const sanitizeInputs = (input: any): UserInputs => {
         contribPension: 500, surplusAllocationOrder: ['pension', 'isa', 'gia', 'cash'],
         drawdownStrategy: 'tax_efficient_bridge', maxISAFromGIA: false, pensionLumpSumMode: 'drip',
         pensionLumpSumDestination: 'cash', annualSpending: 30000, spendingTaperAge: 75, spendingTaperRate: 1,
-        inflation: 2.5, growthCash: 1, growthISA: 5, growthGIA: 5, growthPension: 5, pensionTaxFreeCash: 25,
+        inflation: 2.5, growthCash: 1, growthISA: 5, growthGIA: 5, growthPension: 5, pensionFees: 0.5, pensionTaxFreeCash: 25,
         pensionTaxRate: 20, events: [], loans: [], investmentProperties: [], dbPensions: [], mortgages: []
     };
 
@@ -174,15 +175,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-900 text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop">
+            <div className="modal-glass rounded-sm shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center header-gradient text-white">
                     <h2 className="text-lg font-bold flex items-center gap-2">
                         <SettingsIcon size={20} />
                         Settings
                     </h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white">
-                        <X size={20} />
+                    <button onClick={onClose} className="btn-glass p-1.5 rounded-sm">
+                        <X size={18} />
                     </button>
                 </div>
 
@@ -204,7 +205,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         onClick={() => setActiveTab('data')}
                         className={`flex-1 py-3 text-sm font-semibold flex items-center justify-center gap-2 border-b-2 transition ${activeTab === 'data' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-slate-500 hover:bg-slate-100'}`}
                     >
-                        <Save size={16} /> Data
+                        <Save size={16} /> Save / Load
                     </button>
                 </div>
 
@@ -215,7 +216,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
                             <div>
                                 <h3 className="text-sm font-bold text-slate-800 mb-2">Age Settings</h3>
-                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                <div className="bg-slate-50 p-4 rounded-sm border border-slate-100">
                                     <div className="flex justify-between items-center mb-2">
                                         <label className="text-sm font-semibold text-slate-700">Year of Birth</label>
                                         <span className="font-bold text-blue-600 bg-white shadow-sm border border-blue-100 px-2 py-0.5 rounded text-sm">
@@ -226,7 +227,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         type="range" min={1955} max={2005} step={1}
                                         value={currentBirthYear}
                                         onChange={(e) => onUpdateBirthYear(Number(e.target.value))}
-                                        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                        className="w-full h-2 bg-slate-200 rounded-sm appearance-none cursor-pointer accent-blue-600"
                                     />
                                     <div className="flex justify-between text-[10px] text-slate-400 mt-1 px-1">
                                         <span>1955</span>
@@ -241,7 +242,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <div className="pt-4 border-t border-slate-100">
                                 <button
                                     onClick={onResetOnboarding}
-                                    className="w-full flex items-center justify-center gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100 transition text-indigo-700 text-sm font-bold"
+                                    className="w-full flex items-center justify-center gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-sm hover:bg-indigo-100 transition text-indigo-700 text-sm font-bold"
                                 >
                                     <RefreshCw size={16} />
                                     Restart Setup Wizard
@@ -270,7 +271,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 {scenarios.map(s => (
                                     <div
                                         key={s.id}
-                                        className={`flex items-center justify-between p-3 rounded-lg border transition ${s.id === activeScenarioId ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-500' : 'bg-white border-slate-200 hover:border-slate-300'}`}
+                                        className={`flex items-center justify-between p-3 rounded-sm border transition ${s.id === activeScenarioId ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-500' : 'bg-white border-slate-200 hover:border-slate-300'}`}
                                     >
                                         <div className="flex items-center gap-3 flex-1 min-w-0">
                                             <input
@@ -297,8 +298,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     <div className="text-sm font-medium text-slate-800 truncate cursor-pointer hover:text-blue-700 transition" title={s.name}>
                                                         {s.name}
                                                     </div>
-                                                    <div className="text-[10px] text-slate-400">
-                                                        Created {new Date(s.createdAt).toLocaleDateString()}
+
+                                                    {/* Headline Metrics Grid */}
+                                                    <div className="grid grid-cols-4 gap-2 mt-2">
+                                                        <div className="bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                            <div className="text-[10px] text-slate-400 uppercase font-bold">Retire Age</div>
+                                                            <div className="text-xs font-bold text-slate-700">{s.data.retirementAge}</div>
+                                                        </div>
+                                                        <div className="bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                            <div className="text-[10px] text-slate-400 uppercase font-bold">Legacy</div>
+                                                            <div className="text-xs font-bold text-slate-700">
+                                                                {(() => {
+                                                                    // Lite calculation for display
+                                                                    const res = calculateProjection({ ...s.data, currentAge: new Date().getFullYear() - (s.data.birthYear || 1984) });
+                                                                    const last = res[res.length - 1];
+                                                                    return last ? `£${(last.totalNetWorth / 1000000).toFixed(1)}m` : '-';
+                                                                })()}
+                                                            </div>
+                                                        </div>
+                                                        <div className="bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                            <div className="text-[10px] text-slate-400 uppercase font-bold">Income</div>
+                                                            <div className="text-xs font-bold text-slate-700">£{(s.data.currentSalary / 1000).toFixed(0)}k</div>
+                                                        </div>
+                                                        <div className="bg-slate-50 p-1.5 rounded border border-slate-100">
+                                                            <div className="text-[10px] text-slate-400 uppercase font-bold">Life Exp</div>
+                                                            <div className="text-xs font-bold text-slate-700">{s.data.lifeExpectancy}</div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="text-[10px] text-slate-400 mt-1.5 flex justify-between">
+                                                        <span>Created {new Date(s.createdAt).toLocaleDateString()}</span>
                                                     </div>
                                                 </div>
                                             )}
@@ -338,7 +367,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <div className="grid grid-cols-2 gap-3">
                                     <button
                                         onClick={handleExport}
-                                        className="flex flex-col items-center justify-center gap-2 p-4 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition text-slate-600 text-sm font-medium"
+                                        className="flex flex-col items-center justify-center gap-2 p-4 bg-white border border-slate-200 rounded-sm hover:bg-slate-50 transition text-slate-600 text-sm font-medium"
                                     >
                                         <Download size={24} className="text-blue-600" />
                                         Export JSON
@@ -346,7 +375,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                                     <button
                                         onClick={handleImportClick}
-                                        className="flex flex-col items-center justify-center gap-2 p-4 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition text-slate-600 text-sm font-medium"
+                                        className="flex flex-col items-center justify-center gap-2 p-4 bg-white border border-slate-200 rounded-sm hover:bg-slate-50 transition text-slate-600 text-sm font-medium"
                                     >
                                         <Upload size={24} className="text-green-600" />
                                         Import JSON
@@ -361,7 +390,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </div>
                             </div>
 
-                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 text-xs text-slate-500">
+                            <div className="bg-slate-50 p-4 rounded-sm border border-slate-100 text-xs text-slate-500">
                                 <p className="flex items-center gap-2 font-bold text-slate-600 mb-1">
                                     <FileJson size={14} />
                                     Local Storage
@@ -372,14 +401,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </div>
 
                             {error && (
-                                <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2">
+                                <div className="p-3 bg-red-50 text-red-700 text-sm rounded-sm flex items-center gap-2">
                                     <AlertTriangle size={16} />
                                     {error}
                                 </div>
                             )}
 
                             {success && (
-                                <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2">
+                                <div className="p-3 bg-green-50 text-green-700 text-sm rounded-sm flex items-center gap-2">
                                     <CheckCircle size={16} />
                                     {success}
                                 </div>

@@ -2,6 +2,22 @@
 
 import { UserInputs, YearlyResult, SurplusTarget, Loan } from '../types';
 
+
+/**
+ * Calculate UK State Pension age based on birth year
+ * Current UK regulations (as of 2024):
+ * - Born before 6 April 1960: Age 66
+ * - Born 6 April 1960 - 5 April 1961: Transitional (66y + months, simplified to 66-67)
+ * - Born 6 April 1961 - 5 April 1977: Age 67
+ * - Born on or after 6 April 1977: Age 68 (scheduled 2044-2046)
+ */
+export const getStatePensionAge = (birthYear: number): number => {
+    if (birthYear < 1960) return 66;
+    if (birthYear === 1960) return 66; // Transitional year, simplified
+    if (birthYear <= 1977) return 67;
+    return 68; // Born 1978 onwards
+};
+
 /**
  * Advanced UK Tax Estimator (2024/25 Basis + Inflation Logic)
  * Handles Salary (NI + Income Tax) and Dividends (Dividend Tax) stacking.
@@ -440,6 +456,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
 
         // --- 7. Pension Lump Sum ---
         let lumpSumToISA = 0;
+        let lumpSumTaken = 0;
         const effectiveRetirementAge = Math.max(retirementAge, pensionAccessAge);
 
         if (!hasTakenLumpSum && age === effectiveRetirementAge && inputs.pensionLumpSumMode === 'upfront') {
@@ -448,6 +465,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
 
             if (lumpSumAmount > 0) {
                 potPension -= lumpSumAmount;
+                lumpSumTaken = lumpSumAmount;
                 let remainingLump = lumpSumAmount;
 
                 if (inputs.pensionLumpSumDestination === 'isa') {
@@ -462,7 +480,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
                     potGIA += remainingLump;
                 }
                 else {
-                    potCash += remainingLump;
+                    potCash += remainingLump; // Default to Cash
                 }
                 hasTakenLumpSum = true;
             }
@@ -627,10 +645,26 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
             + (surplusToGIA * getMidYearGrowthFactor(inputs.growthGIA))
             - (withdrawalGIA * getMidYearGrowthFactor(inputs.growthGIA));
 
-        potPension = (potPension * getGrowthFactor(inputs.growthPension))
-            + (contribPensionYear * getMidYearGrowthFactor(inputs.growthPension))
-            + (surplusToPension * getMidYearGrowthFactor(inputs.growthPension))
-            - (withdrawalPensionGross * getMidYearGrowthFactor(inputs.growthPension));
+        const netPensionGrowthRate = val(inputs.growthPension, 5) - val(inputs.pensionFees, 0);
+
+        potPension = (potPension * getGrowthFactor(netPensionGrowthRate))
+            + (contribPensionYear * getMidYearGrowthFactor(netPensionGrowthRate))
+            + (surplusToPension * getMidYearGrowthFactor(netPensionGrowthRate))
+            - (withdrawalPensionGross * getMidYearGrowthFactor(netPensionGrowthRate));
+
+        // --- 11a. Benchmark Calculation (Shadow Pot) ---
+        // Simulate what the pension would be with Low Cost Fixed Fees (£240/yr)
+        const benchmarkFee = 240 * inflationMultiplier;
+        const grossPensionGrowth = val(inputs.growthPension, 5); // No % fee deduction
+
+        // Apply same cashflows to benchmark, but different fee structure
+        // Note: We use the SAME withdrawal amount to see capital erosion impact,
+        // rather than recalculating sustainable withdrawal.
+        potPensionBenchmark = (potPensionBenchmark * getGrowthFactor(grossPensionGrowth))
+            + (contribPensionYear * getMidYearGrowthFactor(grossPensionGrowth))
+            + (surplusToPension * getMidYearGrowthFactor(grossPensionGrowth))
+            - (withdrawalPensionGross * getMidYearGrowthFactor(grossPensionGrowth))
+            - benchmarkFee;
 
         // Property Growth
         let totalPropertyValue = 0;
@@ -678,7 +712,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
             withdrawalCash,
             withdrawalISA,
             withdrawalGIA,
-            withdrawalPension: withdrawalPensionNet,
+            withdrawalPension: withdrawalPensionNet + lumpSumTaken,
             shortfall,
             savedToCash: surplusToCash,
             savedToISA: surplusToISA,
@@ -689,9 +723,17 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
             spentSalary,
             spentStatePension,
             spentOther,
-            totalSavedToCash: surplusToCash + contribCashYear,
-            totalSavedToISA: surplusToISA + contribISAYear,
-            totalSavedToGIA: surplusToGIA + contribGIAYear,
+            totalSavedToCash: surplusToCash + contribCashYear + (inputs.pensionLumpSumDestination === 'cash' ? (lumpSumTaken - lumpSumToISA) : 0), // Assuming dest=isa implies lumpSumToISA takes it all? No.
+            // Correction: if dest=ISA, overflow goes to GIA.
+            // If dest=GIA, it all goes to GIA.
+            // If dest=Cash, it all goes to Cash.
+            // Logic in Section 7:
+            // if dest=isa -> some to ISA, remainder to GIA.
+            // if dest=gia -> all to GIA.
+            // if dest=cash -> all to Cash.
+
+            totalSavedToISA: surplusToISA + contribISAYear + lumpSumToISA,
+            totalSavedToGIA: surplusToGIA + contribGIAYear + (inputs.pensionLumpSumDestination === 'gia' ? lumpSumTaken : (inputs.pensionLumpSumDestination === 'isa' ? (lumpSumTaken - lumpSumToISA) : 0)),
             totalSavedToPension: surplusToPension + contribPensionYear,
 
             balanceCash: Math.max(0, potCash),
@@ -700,7 +742,8 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
             balancePension: Math.max(0, potPension),
             propertyValue: totalPropertyValue,
             liquidNetWorth: Math.max(0, potCash + potISA + potGIA),
-            totalNetWorth: Math.max(0, potCash + potISA + potGIA + potPension + totalPropertyValue)
+            totalNetWorth: Math.max(0, potCash + potISA + potGIA + potPension + totalPropertyValue),
+            benchmarkPensionPot: Math.max(0, potPensionBenchmark)
         });
     }
 

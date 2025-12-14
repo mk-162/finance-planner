@@ -77,7 +77,7 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-white rounded-sm w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
 
                 {/* Header */}
                 <div className="bg-emerald-600 p-4 flex justify-between items-center text-white">
@@ -92,12 +92,12 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
                 <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
 
                     {/* Intro */}
-                    <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-sm border border-slate-200">
                         Add income sources that happen outside your main salary. Examples: Side hustles, consulting, part-time work, or rental income not tied to a property.
                     </div>
 
                     {/* Add Form */}
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="bg-slate-50 p-4 rounded-sm border border-slate-200">
                         <h3 className="text-xs font-bold text-emerald-800 uppercase mb-3">Add New Income Stream</h3>
 
                         <div className="space-y-3">
@@ -147,7 +147,7 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
                             <button
                                 onClick={handleAdd}
                                 disabled={!name || !amount}
-                                className="w-full py-2 bg-emerald-600 text-white rounded-lg font-bold text-xs hover:bg-emerald-700 disabled:opacity-50 transition shadow-sm mt-2"
+                                className="w-full py-2 bg-emerald-600 text-white rounded-sm font-bold text-xs hover:bg-emerald-700 disabled:opacity-50 transition shadow-sm mt-2"
                             >
                                 + Add Income Stream
                             </button>
@@ -158,7 +158,7 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
                     {incomes.length === 0 && (
                         <button
                             onClick={handlePrepopulate}
-                            className="w-full py-2 border border-dashed border-emerald-300 text-emerald-700 rounded-lg text-xs font-medium hover:bg-emerald-50 transition"
+                            className="w-full py-2 border border-dashed border-emerald-300 text-emerald-700 rounded-sm text-xs font-medium hover:bg-emerald-50 transition"
                         >
                             + Add Example "Semi-Retirement" Portfolio
                         </button>
@@ -190,6 +190,16 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
                         ))}
                     </div>
 
+                </div>
+
+                {/* Close Button */}
+                <div className="p-4 border-t border-slate-100 bg-slate-50">
+                    <button
+                        onClick={onClose}
+                        className="w-full bg-slate-900 text-white py-2.5 rounded-sm font-medium hover:bg-slate-800 transition"
+                    >
+                        Close
+                    </button>
                 </div>
             </div>
         </div>

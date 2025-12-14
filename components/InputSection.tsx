@@ -115,12 +115,36 @@ interface SliderInputProps {
 export const SliderInput: React.FC<SliderInputProps> = ({
   label, value, onChange, min, max, step = 1, formatValue
 }) => {
+  const [localValue, setLocalValue] = useState(value);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Sync local state when external value changes
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = Number(e.target.value);
+    setLocalValue(newValue); // Instant visual update
+
+    // Debounce the actual state update
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      onChange(newValue);
+    }, 150);
+  };
+
+  // Cleanup
+  useEffect(() => {
+    return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
+  }, []);
+
   return (
     <div className="mb-5">
       <div className="flex justify-between items-center mb-1">
         <label className="text-xs font-semibold text-slate-500 uppercase">{label}</label>
         <span className="text-sm font-bold text-slate-700">
-          {formatValue ? formatValue(value) : value}
+          {formatValue ? formatValue(localValue) : localValue}
         </span>
       </div>
       <input
@@ -128,9 +152,9 @@ export const SliderInput: React.FC<SliderInputProps> = ({
         min={min}
         max={max}
         step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mt-2"
+        value={localValue}
+        onChange={handleChange}
+        className="w-full h-2 bg-slate-200 rounded-sm appearance-none cursor-pointer accent-blue-600 mt-2"
       />
     </div>
   );

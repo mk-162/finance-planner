@@ -2,20 +2,20 @@
 
 import React from 'react';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Line,
-  LineChart,
-  ComposedChart,
-  AreaChart,
-  Area,
-  ReferenceLine
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend,
+    ResponsiveContainer,
+    Line,
+    LineChart,
+    ComposedChart,
+    AreaChart,
+    Area,
+    ReferenceLine
 } from 'recharts';
 import { YearlyResult, FinancialEvent } from '../types';
 import { ArrowUp, ArrowDown } from 'lucide-react';
@@ -29,14 +29,14 @@ export interface AssetVisibility {
 }
 
 interface ResultsChartProps {
-  data: YearlyResult[];
-  mode: 'cashflow' | 'assets';
-  assetVisibility: AssetVisibility;
-  pensionAccessAge: number;
-  retirementAge: number;
-  mortgageEndAge: number;
-  events: FinancialEvent[];
-  stacked?: boolean;
+    data: YearlyResult[];
+    mode: 'cashflow' | 'assets';
+    assetVisibility: AssetVisibility;
+    pensionAccessAge: number;
+    retirementAge: number;
+    mortgageEndAge: number;
+    events: FinancialEvent[];
+    stacked?: boolean;
 }
 
 const COLORS = {
@@ -46,7 +46,7 @@ const COLORS = {
     dbPension: '#d97706', // amber-600
     rentalIncome: '#059669', // emerald-600
     otherIncome: '#0ea5e9', // sky-500
-    
+
     drawdownPension: '#eab308', // yellow-500
     drawdownISA: '#6366f1', // indigo-500
     drawdownGIA: '#10b981', // emerald-500
@@ -62,10 +62,10 @@ const COLORS = {
 };
 
 const formatCurrency = (value: number) => {
-  if (value >= 1000000) return `£${(value / 1000000).toFixed(2)}m`;
-  if (value >= 10000) return `£${(value / 1000).toFixed(0)}k`; // 10k+ -> 10k
-  if (value >= 1000) return `£${(value / 1000).toFixed(1)}k`; // 1k-10k -> 9.5k
-  return `£${value.toFixed(0)}`;
+    if (value >= 1000000) return `£${(value / 1000000).toFixed(2)}m`;
+    if (value >= 10000) return `£${(value / 1000).toFixed(0)}k`; // 10k+ -> 10k
+    if (value >= 1000) return `£${(value / 1000).toFixed(1)}k`; // 1k-10k -> 9.5k
+    return `£${value.toFixed(0)}`;
 };
 
 interface CustomTooltipProps {
@@ -94,7 +94,7 @@ const TooltipRow = ({ label, value, color, isNegative = false, bold = false }: {
 const AssetTooltipRow = ({ label, value, prevValue, color }: { label: string, value: number, prevValue: number | undefined, color: string }) => {
     let change = 0;
     const hasPrev = prevValue !== undefined;
-    
+
     if (hasPrev) {
         if (prevValue === 0) {
             change = value > 0 ? 100 : 0;
@@ -105,7 +105,7 @@ const AssetTooltipRow = ({ label, value, prevValue, color }: { label: string, va
 
     const isPositive = change >= 0;
     const isZero = Math.abs(change) < 0.1;
-    
+
     return (
         <div className="flex justify-between items-center mb-1.5 last:mb-0">
             <div className="flex items-center gap-2">
@@ -113,7 +113,7 @@ const AssetTooltipRow = ({ label, value, prevValue, color }: { label: string, va
                 <span className="text-slate-600 font-medium">{label}</span>
             </div>
             <div className="flex items-center gap-3">
-                 {hasPrev && !isZero && (
+                {hasPrev && !isZero && (
                     <div className={`flex items-center text-[10px] font-bold ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
                         {isPositive ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
                         {Math.abs(change).toFixed(1)}%
@@ -126,205 +126,199 @@ const AssetTooltipRow = ({ label, value, prevValue, color }: { label: string, va
 };
 
 const CustomTooltip = ({ active, payload, label, events, retirementAge, mortgageEndAge, mode, fullData }: CustomTooltipProps) => {
-  if (active && payload && payload.length) {
-    const currentAge = label || 0;
-    const data = payload[0].payload as YearlyResult; // Access full data object
+    if (active && payload && payload.length) {
+        const currentAge = label || 0;
+        const data = payload[0].payload as YearlyResult; // Access full data object
 
-    // Find active events for this year
-    const currentEvents = events.filter(e => {
-        if (e.isRecurring) {
-            const end = e.endAge || e.age;
-            return currentAge >= e.age && currentAge <= end;
+        // Find active events for this year
+        const currentEvents = events.filter(e => {
+            if (e.isRecurring) {
+                const end = e.endAge || e.age;
+                return currentAge >= e.age && currentAge <= end;
+            }
+            return e.age === currentAge;
+        });
+
+        const isRetirementYear = currentAge === retirementAge;
+        const isMortgageEndYear = mortgageEndAge > 0 && currentAge === mortgageEndAge;
+        const hasAnnotations = currentEvents.length > 0 || isRetirementYear || isMortgageEndYear;
+
+        // -- ASSET MODE TOOLTIP --
+        if (mode === 'assets') {
+            const currentIndex = fullData.findIndex(d => d.age === currentAge);
+            const prevData = currentIndex > 0 ? fullData[currentIndex - 1] : undefined;
+
+            return (
+                <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 shadow-xl rounded-sm text-sm z-50 min-w-[280px]">
+                    <div className="border-b border-slate-100 pb-2 mb-3 flex justify-between items-center">
+                        <span className="font-bold text-slate-800 text-lg">Age {currentAge}</span>
+                        <span className="text-slate-400 text-xs font-mono">{data.year}</span>
+                    </div>
+
+                    {/* Total Wealth */}
+                    <div className="bg-slate-50 p-2 rounded-sm border border-slate-100 mb-3">
+                        <AssetTooltipRow
+                            label="Total Wealth"
+                            value={data.totalNetWorth}
+                            prevValue={prevData?.totalNetWorth}
+                            color="#1e293b"
+                        />
+                    </div>
+
+                    {/* Breakdown */}
+                    <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Asset Breakdown</p>
+
+                        {data.propertyValue > 0 && (
+                            <AssetTooltipRow
+                                label="Property (Inv)"
+                                value={data.propertyValue}
+                                prevValue={prevData?.propertyValue}
+                                color="#3b82f6"
+                            />
+                        )}
+                        {data.balancePension > 0 && (
+                            <AssetTooltipRow
+                                label="Pension"
+                                value={data.balancePension}
+                                prevValue={prevData?.balancePension}
+                                color={COLORS.drawdownPension}
+                            />
+                        )}
+                        {data.balanceISA > 0 && (
+                            <AssetTooltipRow
+                                label="ISA"
+                                value={data.balanceISA}
+                                prevValue={prevData?.balanceISA}
+                                color={COLORS.drawdownISA}
+                            />
+                        )}
+                        {data.balanceGIA > 0 && (
+                            <AssetTooltipRow
+                                label="Trading (GIA)"
+                                value={data.balanceGIA}
+                                prevValue={prevData?.balanceGIA}
+                                color={COLORS.drawdownGIA}
+                            />
+                        )}
+                        {data.balanceCash > 0 && (
+                            <AssetTooltipRow
+                                label="Cash"
+                                value={data.balanceCash}
+                                prevValue={prevData?.balanceCash}
+                                color={COLORS.drawdownCash}
+                            />
+                        )}
+                    </div>
+                </div>
+            );
         }
-        return e.age === currentAge;
-    });
 
-    const isRetirementYear = currentAge === retirementAge;
-    const isMortgageEndYear = mortgageEndAge > 0 && currentAge === mortgageEndAge;
-    const hasAnnotations = currentEvents.length > 0 || isRetirementYear || isMortgageEndYear;
-
-    // -- ASSET MODE TOOLTIP --
-    if (mode === 'assets') {
-        const currentIndex = fullData.findIndex(d => d.age === currentAge);
-        const prevData = currentIndex > 0 ? fullData[currentIndex - 1] : undefined;
+        // -- CASHFLOW MODE TOOLTIP --
+        const totalDrawdown = data.withdrawalPension + data.withdrawalISA + data.withdrawalGIA + data.withdrawalCash;
+        const totalIncome = data.salaryIncome + data.dividendIncome + data.statePensionIncome + data.dbPensionIncome + data.rentalIncome + data.otherIncome + totalDrawdown;
 
         return (
-            <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 shadow-xl rounded-xl text-sm z-50 min-w-[280px]">
+            <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 shadow-xl rounded-sm text-sm z-50 min-w-[280px]">
                 <div className="border-b border-slate-100 pb-2 mb-3 flex justify-between items-center">
                     <span className="font-bold text-slate-800 text-lg">Age {currentAge}</span>
                     <span className="text-slate-400 text-xs font-mono">{data.year}</span>
                 </div>
 
-                {/* Total Wealth */}
-                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100 mb-3">
-                    <AssetTooltipRow 
-                        label="Total Wealth" 
-                        value={data.totalNetWorth} 
-                        prevValue={prevData?.totalNetWorth} 
-                        color="#1e293b" 
-                    />
-                 </div>
+                {/* Annotations Section */}
+                {hasAnnotations && (
+                    <div className="mb-4 space-y-1.5 bg-slate-50 p-2 rounded-sm border border-slate-100">
+                        {isRetirementYear && (
+                            <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-100/50 px-2 py-1 rounded">
+                                <span>🎉 Retirement</span>
+                            </div>
+                        )}
+                        {isMortgageEndYear && (
+                            <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 bg-indigo-100/50 px-2 py-1 rounded">
+                                <span>🏠 Mortgage Free</span>
+                            </div>
+                        )}
+                        {currentEvents.map(e => (
+                            <div key={e.id} className="flex items-center justify-between text-xs">
+                                <span className="font-medium text-slate-700">{e.name}</span>
+                                <span className={`font-mono ${e.type === 'income' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                    {e.type === 'income' ? '+' : '-'}£{e.amount.toLocaleString()}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
-                 {/* Breakdown */}
-                 <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Asset Breakdown</p>
-                    
-                    {data.propertyValue > 0 && (
-                        <AssetTooltipRow 
-                            label="Property (Inv)" 
-                            value={data.propertyValue} 
-                            prevValue={prevData?.propertyValue} 
-                            color="#3b82f6" 
-                        />
+                {/* --- Cashflow Statement View --- */}
+                <div className="space-y-4">
+
+                    {/* Cash In */}
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Cash In</p>
+                        <div className="space-y-1">
+                            {data.salaryIncome > 0 && <TooltipRow label="Salary (Net)" value={data.salaryIncome} color={COLORS.salary} />}
+                            {data.dividendIncome > 0 && <TooltipRow label="Dividends (Net)" value={data.dividendIncome} color={COLORS.dividend} />}
+                            {data.statePensionIncome > 0 && <TooltipRow label="State Pension" value={data.statePensionIncome} color={COLORS.statePension} />}
+                            {data.dbPensionIncome > 0 && <TooltipRow label="Final Salary Pension" value={data.dbPensionIncome} color={COLORS.dbPension} />}
+                            {data.rentalIncome > 0 && <TooltipRow label="Rental Income" value={data.rentalIncome} color={COLORS.rentalIncome} />}
+                            {data.otherIncome > 0 && <TooltipRow label="Other Income" value={data.otherIncome} color={COLORS.otherIncome} />}
+
+                            {/* Drawdowns */}
+                            {data.withdrawalPension > 0 && <TooltipRow label="From Pension" value={data.withdrawalPension} color={COLORS.drawdownPension} />}
+                            {data.withdrawalISA > 0 && <TooltipRow label="From ISA" value={data.withdrawalISA} color={COLORS.drawdownISA} />}
+                            {data.withdrawalGIA > 0 && <TooltipRow label="From GIA" value={data.withdrawalGIA} color={COLORS.drawdownGIA} />}
+                            {data.withdrawalCash > 0 && <TooltipRow label="From Cash" value={data.withdrawalCash} color={COLORS.drawdownCash} />}
+                        </div>
+                        <div className="border-t border-slate-100 mt-1 pt-1">
+                            <TooltipRow label="Total Cash In" value={totalIncome} bold />
+                        </div>
+                    </div>
+
+                    {/* Cash Out */}
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Cash Out</p>
+                        <div className="space-y-1">
+                            <TooltipRow label="Regular Outgoings" value={data.generalSpending} isNegative />
+                            {data.housingExpense > 0 && <TooltipRow label="Housing" value={data.housingExpense} isNegative />}
+                            {data.debtRepayments > 0 && <TooltipRow label="Debt Repayment" value={data.debtRepayments} isNegative />}
+                            {data.oneOffExpense > 0 && <TooltipRow label="Events/One-offs" value={data.oneOffExpense} isNegative />}
+                        </div>
+                        <div className="border-t border-slate-100 mt-1 pt-1 flex justify-between text-xs font-bold items-center">
+                            <div className="flex items-center gap-2">
+                                {/* Dashed line indicator to match chart */}
+                                <div className="w-6 h-0 border-t-2 border-dashed border-slate-800"></div>
+                                <span className="text-slate-700">Total Expenses</span>
+                            </div>
+                            <span className="text-slate-800">-{formatCurrency(data.totalExpense)}</span>
+                        </div>
+                    </div>
+
+                    {/* Net Result - Prominent Display */}
+                    {(data.totalSavedToISA > 0 || data.totalSavedToPension > 0 || data.totalSavedToGIA > 0 || data.totalSavedToCash > 0 || data.shortfall > 0) && (
+                        <div className={`p-3 rounded-lg border mt-2 ${data.shortfall > 0 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                            <div className="flex justify-between items-center mb-1">
+                                <p className={`text-[10px] font-bold uppercase ${data.shortfall > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                                    {data.shortfall > 0 ? 'Shortfall' : 'Net Position (Saved)'}
+                                </p>
+                            </div>
+
+                            <div className={`text-2xl font-bold font-mono py-1 ${data.shortfall > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                {data.shortfall > 0 ? '-' : '+'}{formatCurrency(data.shortfall > 0 ? data.shortfall : (totalIncome - data.totalExpense))}
+                            </div>
+
+                            <div className="space-y-1 mt-2 pt-2 border-t border-black/5">
+                                {data.totalSavedToPension > 0 && <TooltipRow label="Pension" value={data.totalSavedToPension} color={COLORS.savedPension} />}
+                                {data.totalSavedToISA > 0 && <TooltipRow label="ISA" value={data.totalSavedToISA} color={COLORS.savedISA} />}
+                                {data.totalSavedToGIA > 0 && <TooltipRow label="GIA" value={data.totalSavedToGIA} color={COLORS.savedGIA} />}
+                                {data.totalSavedToCash > 0 && <TooltipRow label="Cash" value={data.totalSavedToCash} color={COLORS.savedCash} />}
+                            </div>
+                        </div>
                     )}
-                    {data.balancePension > 0 && (
-                        <AssetTooltipRow 
-                            label="Pension" 
-                            value={data.balancePension} 
-                            prevValue={prevData?.balancePension} 
-                            color={COLORS.drawdownPension} 
-                        />
-                    )}
-                    {data.balanceISA > 0 && (
-                        <AssetTooltipRow 
-                            label="ISA" 
-                            value={data.balanceISA} 
-                            prevValue={prevData?.balanceISA} 
-                            color={COLORS.drawdownISA} 
-                        />
-                    )}
-                    {data.balanceGIA > 0 && (
-                        <AssetTooltipRow 
-                            label="Trading (GIA)" 
-                            value={data.balanceGIA} 
-                            prevValue={prevData?.balanceGIA} 
-                            color={COLORS.drawdownGIA} 
-                        />
-                    )}
-                     {data.balanceCash > 0 && (
-                        <AssetTooltipRow 
-                            label="Cash" 
-                            value={data.balanceCash} 
-                            prevValue={prevData?.balanceCash} 
-                            color={COLORS.drawdownCash} 
-                        />
-                    )}
-                 </div>
+                </div>
             </div>
         );
     }
-
-    // -- CASHFLOW MODE TOOLTIP --
-    const totalDrawdown = data.withdrawalPension + data.withdrawalISA + data.withdrawalGIA + data.withdrawalCash;
-    const totalIncome = data.salaryIncome + data.dividendIncome + data.statePensionIncome + data.dbPensionIncome + data.rentalIncome + data.otherIncome + totalDrawdown;
-
-    return (
-      <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 shadow-xl rounded-xl text-sm z-50 min-w-[280px]">
-        <div className="border-b border-slate-100 pb-2 mb-3 flex justify-between items-center">
-            <span className="font-bold text-slate-800 text-lg">Age {currentAge}</span>
-            <span className="text-slate-400 text-xs font-mono">{data.year}</span>
-        </div>
-
-        {/* Annotations Section */}
-        {hasAnnotations && (
-            <div className="mb-4 space-y-1.5 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                {isRetirementYear && (
-                     <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-100/50 px-2 py-1 rounded">
-                        <span>🎉 Retirement</span>
-                     </div>
-                )}
-                 {isMortgageEndYear && (
-                     <div className="flex items-center gap-2 text-xs font-bold text-indigo-700 bg-indigo-100/50 px-2 py-1 rounded">
-                        <span>🏠 Mortgage Free</span>
-                     </div>
-                )}
-                {currentEvents.map(e => (
-                    <div key={e.id} className="flex items-center justify-between text-xs">
-                        <span className="font-medium text-slate-700">{e.name}</span>
-                        <span className={`font-mono ${e.type === 'income' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                            {e.type === 'income' ? '+' : '-'}£{e.amount.toLocaleString()}
-                        </span>
-                    </div>
-                ))}
-            </div>
-        )}
-
-        {/* --- Cashflow Statement View --- */}
-        <div className="space-y-4">
-            
-            {/* Cash In */}
-            <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Cash In</p>
-                <div className="space-y-1">
-                    {data.salaryIncome > 0 && <TooltipRow label="Salary (Net)" value={data.salaryIncome} color={COLORS.salary} />}
-                    {data.dividendIncome > 0 && <TooltipRow label="Dividends (Net)" value={data.dividendIncome} color={COLORS.dividend} />}
-                    {data.statePensionIncome > 0 && <TooltipRow label="State Pension" value={data.statePensionIncome} color={COLORS.statePension} />}
-                    {data.dbPensionIncome > 0 && <TooltipRow label="Final Salary Pension" value={data.dbPensionIncome} color={COLORS.dbPension} />}
-                    {data.rentalIncome > 0 && <TooltipRow label="Rental Income" value={data.rentalIncome} color={COLORS.rentalIncome} />}
-                    {data.otherIncome > 0 && <TooltipRow label="Other Income" value={data.otherIncome} color={COLORS.otherIncome} />}
-                    
-                    {/* Drawdowns */}
-                    {data.withdrawalPension > 0 && <TooltipRow label="From Pension" value={data.withdrawalPension} color={COLORS.drawdownPension} />}
-                    {data.withdrawalISA > 0 && <TooltipRow label="From ISA" value={data.withdrawalISA} color={COLORS.drawdownISA} />}
-                    {data.withdrawalGIA > 0 && <TooltipRow label="From GIA" value={data.withdrawalGIA} color={COLORS.drawdownGIA} />}
-                    {data.withdrawalCash > 0 && <TooltipRow label="From Cash" value={data.withdrawalCash} color={COLORS.drawdownCash} />}
-                </div>
-                <div className="border-t border-slate-100 mt-1 pt-1">
-                    <TooltipRow label="Total Cash In" value={totalIncome} bold />
-                </div>
-            </div>
-
-            {/* Cash Out */}
-            <div>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Cash Out</p>
-                 <div className="space-y-1">
-                    <TooltipRow label="Regular Outgoings" value={data.generalSpending} isNegative />
-                    {data.housingExpense > 0 && <TooltipRow label="Housing" value={data.housingExpense} isNegative />}
-                    {data.debtRepayments > 0 && <TooltipRow label="Debt Repayment" value={data.debtRepayments} isNegative />}
-                    {data.oneOffExpense > 0 && <TooltipRow label="Events/One-offs" value={data.oneOffExpense} isNegative />}
-                 </div>
-                 <div className="border-t border-slate-100 mt-1 pt-1 flex justify-between text-xs font-bold items-center">
-                     <div className="flex items-center gap-2">
-                         {/* Dashed line indicator to match chart */}
-                         <div className="w-6 h-0 border-t-2 border-dashed border-slate-800"></div>
-                         <span className="text-slate-700">Total Expenses</span>
-                     </div>
-                     <span className="text-slate-800">-{formatCurrency(data.totalExpense)}</span>
-                 </div>
-            </div>
-
-            {/* Net Result */}
-            {(data.totalSavedToISA > 0 || data.totalSavedToPension > 0 || data.totalSavedToGIA > 0 || data.totalSavedToCash > 0 || data.shortfall > 0) && (
-                <div className="bg-slate-50 p-2 rounded-lg border border-slate-100 mt-2">
-                     <div className="flex justify-between items-center mb-2">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">Net Position</p>
-                        {/* Surplus Math Check */}
-                        {data.shortfall === 0 && (
-                            <span className="text-[10px] font-mono text-emerald-600 font-bold">+{formatCurrency(totalIncome - data.totalExpense)}</span>
-                        )}
-                     </div>
-                     
-                     {data.shortfall > 0 && (
-                         <div className="flex justify-between text-xs text-red-600 font-bold mb-1">
-                             <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                                <span>Shortfall</span>
-                             </div>
-                             <span>{formatCurrency(data.shortfall)}</span>
-                         </div>
-                     )}
-
-                     {data.totalSavedToPension > 0 && <TooltipRow label="Saved to Pension" value={data.totalSavedToPension} color={COLORS.savedPension} />}
-                     {data.totalSavedToISA > 0 && <TooltipRow label="Saved to ISA" value={data.totalSavedToISA} color={COLORS.savedISA} />}
-                     {data.totalSavedToGIA > 0 && <TooltipRow label="Saved to GIA" value={data.totalSavedToGIA} color={COLORS.savedGIA} />}
-                     {data.totalSavedToCash > 0 && <TooltipRow label="Saved to Cash" value={data.totalSavedToCash} color={COLORS.savedCash} />}
-                </div>
-            )}
-        </div>
-      </div>
-    );
-  }
-  return null;
+    return null;
 };
 
 // --- Custom Legend Component ---
@@ -343,7 +337,7 @@ const CustomCashflowLegend = () => {
     return (
         <div className="mt-4 px-2">
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3">
-                
+
                 {/* Row 1: Saved To */}
                 <div className="flex items-center justify-end">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Saved To:</span>
@@ -360,12 +354,12 @@ const CustomCashflowLegend = () => {
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Spent From:</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 sm:gap-6">
-                     {/* Aligned columns roughly with above */}
+                    {/* Aligned columns roughly with above */}
                     <LegendItem color={COLORS.drawdownPension} label="Pension Pot" />
                     <LegendItem color={COLORS.drawdownISA} label="ISA" />
                     <LegendItem color={COLORS.drawdownGIA} label="Trading" />
                     <LegendItem color={COLORS.drawdownCash} label="Cash" />
-                    
+
                     {/* Divider for Income Sources */}
                     <div className="hidden sm:block w-px h-3 bg-slate-300 mx-1"></div>
                     <LegendItem color={COLORS.salary} label="Salary" />
@@ -384,153 +378,153 @@ const CustomCashflowLegend = () => {
     );
 };
 
-export const ResultsChart: React.FC<ResultsChartProps> = ({ 
-  data, 
-  mode, 
-  assetVisibility, 
-  pensionAccessAge, 
-  retirementAge,
-  mortgageEndAge,
-  events,
-  stacked = true 
+export const ResultsChart: React.FC<ResultsChartProps> = ({
+    data,
+    mode,
+    assetVisibility,
+    pensionAccessAge,
+    retirementAge,
+    mortgageEndAge,
+    events,
+    stacked = true
 }) => {
 
-  const renderReferenceLines = () => (
-    <>
-        <ReferenceLine x={pensionAccessAge} stroke="#94a3b8" strokeDasharray="3 3" />
-        <ReferenceLine x={retirementAge} stroke="#10b981" strokeDasharray="5 5" strokeWidth={1.5} />
-        {mortgageEndAge > 0 && mortgageEndAge < 90 && (
-             <ReferenceLine x={mortgageEndAge} stroke="#ef4444" strokeDasharray="4 2" />
-        )}
-        {events.map((e) => (
-             <ReferenceLine key={e.id} x={e.age} stroke="#cbd5e1" strokeDasharray="2 2" />
-        ))}
-    </>
-  );
-  
-  const tooltipProps = { events, retirementAge, mortgageEndAge, mode, fullData: data };
+    const renderReferenceLines = () => (
+        <>
+            <ReferenceLine x={pensionAccessAge} stroke="#94a3b8" strokeDasharray="3 3" />
+            <ReferenceLine x={retirementAge} stroke="#10b981" strokeDasharray="5 5" strokeWidth={1.5} />
+            {mortgageEndAge > 0 && mortgageEndAge < 90 && (
+                <ReferenceLine x={mortgageEndAge} stroke="#ef4444" strokeDasharray="4 2" />
+            )}
+            {events.map((e) => (
+                <ReferenceLine key={e.id} x={e.age} stroke="#cbd5e1" strokeDasharray="2 2" />
+            ))}
+        </>
+    );
 
-  if (mode === 'assets') {
-    if (stacked) {
-        return (
-            <div className="w-full h-full min-h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <defs>
-                  <linearGradient id="colorPension" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#eab308" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#eab308" stopOpacity={0.1}/>
-                  </linearGradient>
-                  <linearGradient id="colorISA" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.1}/>
-                  </linearGradient>
-                  <linearGradient id="colorGIA" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.1}/>
-                  </linearGradient>
-                  <linearGradient id="colorCash" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#a3e635" stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor="#a3e635" stopOpacity={0.1}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-                <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
-                <Tooltip content={<CustomTooltip {...tooltipProps} />} />
-                <Legend wrapperStyle={{ paddingTop: '20px' }} />
-    
-                {renderReferenceLines()}
-    
-                {assetVisibility.cash && <Area type="monotone" dataKey="balanceCash" name="Cash" stackId="1" stroke="#a3e635" fill="url(#colorCash)" />}
-                {assetVisibility.isa && <Area type="monotone" dataKey="balanceISA" name="ISA" stackId="1" stroke="#6366f1" fill="url(#colorISA)" />}
-                {assetVisibility.gia && <Area type="monotone" dataKey="balanceGIA" name="Trading" stackId="1" stroke="#10b981" fill="url(#colorGIA)" />}
-                {assetVisibility.pension && <Area type="monotone" dataKey="balancePension" name="Pension" stackId="1" stroke="#eab308" fill="url(#colorPension)" />}
-                </AreaChart>
-            </ResponsiveContainer>
-            </div>
-        );
-    } else {
-        return (
-            <div className="w-full h-full min-h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-                <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
-                <Tooltip content={<CustomTooltip {...tooltipProps} />} />
-                <Legend wrapperStyle={{ paddingTop: '20px' }} />
-    
-                {renderReferenceLines()}
-                
-                {assetVisibility.total && <Line type="monotone" dataKey="totalNetWorth" name="Total Wealth" stroke="#1e293b" strokeWidth={2} strokeDasharray="5 5" dot={false} />}
-                {assetVisibility.pension && <Line type="monotone" dataKey="balancePension" name="Pension" stroke={COLORS.drawdownPension} strokeWidth={2} dot={false} />}
-                {assetVisibility.isa && <Line type="monotone" dataKey="balanceISA" name="ISA" stroke={COLORS.drawdownISA} strokeWidth={2} dot={false} />}
-                {assetVisibility.gia && <Line type="monotone" dataKey="balanceGIA" name="Trading" stroke={COLORS.drawdownGIA} strokeWidth={2} dot={false} />}
-                {assetVisibility.cash && <Line type="monotone" dataKey="balanceCash" name="Cash" stroke={COLORS.drawdownCash} strokeWidth={2} dot={false} />}
-                </LineChart>
-            </ResponsiveContainer>
-            </div>
-        );
+    const tooltipProps = { events, retirementAge, mortgageEndAge, mode, fullData: data };
+
+    if (mode === 'assets') {
+        if (stacked) {
+            return (
+                <div className="w-full h-full min-h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <defs>
+                                <linearGradient id="colorPension" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#eab308" stopOpacity={0.8} />
+                                    <stop offset="95%" stopColor="#eab308" stopOpacity={0.1} />
+                                </linearGradient>
+                                <linearGradient id="colorISA" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8} />
+                                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.1} />
+                                </linearGradient>
+                                <linearGradient id="colorGIA" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
+                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
+                                </linearGradient>
+                                <linearGradient id="colorCash" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#a3e635" stopOpacity={0.8} />
+                                    <stop offset="95%" stopColor="#a3e635" stopOpacity={0.1} />
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                            <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <Tooltip content={<CustomTooltip {...tooltipProps} />} />
+                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
+
+                            {renderReferenceLines()}
+
+                            {assetVisibility.cash && <Area type="monotone" dataKey="balanceCash" name="Cash" stackId="1" stroke="#a3e635" fill="url(#colorCash)" />}
+                            {assetVisibility.isa && <Area type="monotone" dataKey="balanceISA" name="ISA" stackId="1" stroke="#6366f1" fill="url(#colorISA)" />}
+                            {assetVisibility.gia && <Area type="monotone" dataKey="balanceGIA" name="Trading" stackId="1" stroke="#10b981" fill="url(#colorGIA)" />}
+                            {assetVisibility.pension && <Area type="monotone" dataKey="balancePension" name="Pension" stackId="1" stroke="#eab308" fill="url(#colorPension)" />}
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            );
+        } else {
+            return (
+                <div className="w-full h-full min-h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                            <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <Tooltip content={<CustomTooltip {...tooltipProps} />} />
+                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
+
+                            {renderReferenceLines()}
+
+                            {assetVisibility.total && <Line type="monotone" dataKey="totalNetWorth" name="Total Wealth" stroke="#1e293b" strokeWidth={2} strokeDasharray="5 5" dot={false} />}
+                            {assetVisibility.pension && <Line type="monotone" dataKey="balancePension" name="Pension" stroke={COLORS.drawdownPension} strokeWidth={2} dot={false} />}
+                            {assetVisibility.isa && <Line type="monotone" dataKey="balanceISA" name="ISA" stroke={COLORS.drawdownISA} strokeWidth={2} dot={false} />}
+                            {assetVisibility.gia && <Line type="monotone" dataKey="balanceGIA" name="Trading" stroke={COLORS.drawdownGIA} strokeWidth={2} dot={false} />}
+                            {assetVisibility.cash && <Line type="monotone" dataKey="balanceCash" name="Cash" stroke={COLORS.drawdownCash} strokeWidth={2} dot={false} />}
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            );
+        }
     }
-  }
 
-  // Cashflow Mode
-  return (
-    <div className="w-full h-full min-h-[400px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-          <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
-          <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
-          <Tooltip content={<CustomTooltip {...tooltipProps} />} />
-          <Legend content={<CustomCashflowLegend />} />
+    // Cashflow Mode
+    return (
+        <div className="w-full h-full min-h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                    <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
+                    <Tooltip content={<CustomTooltip {...tooltipProps} />} />
+                    <Legend content={<CustomCashflowLegend />} />
 
-          {renderReferenceLines()}
+                    {renderReferenceLines()}
 
-          {/* 
+                    {/* 
              STACK GROUP A: SPENDING SOURCES (Below Line) 
              These bars represent money that was SPENT.
              They should stack up to reach the Total Expense line.
           */}
-          <Bar dataKey="spentSalary" name="Salary (Spent)" stackId="a" fill={COLORS.salary} radius={[0, 0, 0, 0]} />
-          <Bar dataKey="dividendIncome" name="Dividends (Spent)" stackId="a" fill={COLORS.dividend} radius={[0, 0, 0, 0]} />
-          <Bar dataKey="spentOther" name="Other Inc (Spent)" stackId="a" fill={COLORS.otherIncome} />
-          <Bar dataKey="spentStatePension" name="State Pension (Spent)" stackId="a" fill={COLORS.statePension} />
-          
-          <Bar dataKey="dbPensionIncome" name="Final Salary Pension" stackId="a" fill={COLORS.dbPension} />
-          <Bar dataKey="rentalIncome" name="Rental Income" stackId="a" fill={COLORS.rentalIncome} />
+                    <Bar dataKey="spentSalary" name="Salary (Spent)" stackId="a" fill={COLORS.salary} radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="dividendIncome" name="Dividends (Spent)" stackId="a" fill={COLORS.dividend} radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="spentOther" name="Other Inc (Spent)" stackId="a" fill={COLORS.otherIncome} />
+                    <Bar dataKey="spentStatePension" name="State Pension (Spent)" stackId="a" fill={COLORS.statePension} />
 
-          <Bar dataKey="withdrawalPension" name="Pension Drawdown" stackId="a" fill={COLORS.drawdownPension} />
-          <Bar dataKey="withdrawalISA" name="ISA Drawdown" stackId="a" fill={COLORS.drawdownISA} />
-          <Bar dataKey="withdrawalGIA" name="Inv. Drawdown" stackId="a" fill={COLORS.drawdownGIA} />
-          <Bar dataKey="withdrawalCash" name="Cash Drawdown" stackId="a" fill={COLORS.drawdownCash} />
-          
-          <Bar dataKey="shortfall" name="Shortfall" stackId="a" fill={COLORS.shortfall} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="dbPensionIncome" name="Final Salary Pension" stackId="a" fill={COLORS.dbPension} />
+                    <Bar dataKey="rentalIncome" name="Rental Income" stackId="a" fill={COLORS.rentalIncome} />
 
-          {/* 
+                    <Bar dataKey="withdrawalPension" name="Pension Drawdown" stackId="a" fill={COLORS.drawdownPension} />
+                    <Bar dataKey="withdrawalISA" name="ISA Drawdown" stackId="a" fill={COLORS.drawdownISA} />
+                    <Bar dataKey="withdrawalGIA" name="Inv. Drawdown" stackId="a" fill={COLORS.drawdownGIA} />
+                    <Bar dataKey="withdrawalCash" name="Cash Drawdown" stackId="a" fill={COLORS.drawdownCash} />
+
+                    <Bar dataKey="shortfall" name="Shortfall" stackId="a" fill={COLORS.shortfall} radius={[4, 4, 0, 0]} />
+
+                    {/* 
              STACK GROUP A (Cont): SAVINGS DESTINATIONS (Above Line)
              These bars represent surplus money that was SAVED.
              They sit on top of the 'Spent' bars.
           */}
-          <Bar dataKey="totalSavedToPension" name="Saved to Pension" stackId="a" fill={COLORS.savedPension} radius={[2, 2, 0, 0]} />
-          <Bar dataKey="totalSavedToISA" name="Saved to ISA" stackId="a" fill={COLORS.savedISA} radius={[2, 2, 0, 0]} />
-          <Bar dataKey="totalSavedToGIA" name="Saved to GIA" stackId="a" fill={COLORS.savedGIA} radius={[2, 2, 0, 0]} />
-          <Bar dataKey="totalSavedToCash" name="Saved to Cash" stackId="a" fill={COLORS.savedCash} radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="totalSavedToPension" name="Saved to Pension" stackId="a" fill={COLORS.savedPension} radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="totalSavedToISA" name="Saved to ISA" stackId="a" fill={COLORS.savedISA} radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="totalSavedToGIA" name="Saved to GIA" stackId="a" fill={COLORS.savedGIA} radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="totalSavedToCash" name="Saved to Cash" stackId="a" fill={COLORS.savedCash} radius={[2, 2, 0, 0]} />
 
-          {/* The Expense Line */}
-          <Line 
-            type="step" 
-            dataKey="totalExpense" 
-            name="Total Expenses" 
-            stroke={COLORS.expenseLine} 
-            strokeWidth={2} 
-            strokeDasharray="4 4"
-            dot={false}
-          />
+                    {/* The Expense Line */}
+                    <Line
+                        type="step"
+                        dataKey="totalExpense"
+                        name="Total Expenses"
+                        stroke={COLORS.expenseLine}
+                        strokeWidth={2}
+                        strokeDasharray="4 4"
+                        dot={false}
+                    />
 
-        </ComposedChart>
-      </ResponsiveContainer>
-    </div>
-  );
+                </ComposedChart>
+            </ResponsiveContainer>
+        </div>
+    );
 };

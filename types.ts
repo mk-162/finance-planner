@@ -34,6 +34,7 @@ export interface InvestmentProperty {
   name: string;
   value: number;
   monthlyRent: number;
+  monthlyCost: number; // New: Costs (Management, Maintenance, etc)
   growthRate: number; // Capital Appreciation
 
   // Linked Mortgage
@@ -158,6 +159,7 @@ export interface UserInputs {
   growthISA: number; // %
   growthGIA: number; // %
   growthPension: number; // %
+  pensionFees?: number; // % Annual Fee
 
   // Tax Assumptions
   pensionTaxFreeCash: number; // % (Default 25)
@@ -232,4 +234,5 @@ export interface YearlyResult {
 
   totalNetWorth: number;
   liquidNetWorth: number; // Cash + ISA + GIA
+  benchmarkPensionPot?: number; // New: Simulated pot with low fees
 }

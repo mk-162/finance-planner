@@ -1,8 +1,8 @@
 
 
-import React, { useState, useMemo, useEffect, useDeferredValue } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { UserInputs, FinancialEvent, Scenario } from './types';
-import { calculateProjection, getStatePensionAge } from './services/calculationEngine';
+import { calculateProjection } from './services/calculationEngine';
 import { ResultsChart, AssetVisibility } from './components/ResultsChart';
 import { SliderInput, NumberInput, SimpleFormattedInput } from './components/InputSection';
 import { SmartInput } from './components/SmartInput';
@@ -17,8 +17,6 @@ import { MortgageModal } from './components/MortgageModal';
 import { DBPensionModal } from './components/DBPensionModal';
 import { AdditionalIncomeModal } from './components/AdditionalIncomeModal';
 import { AssetInput } from './components/AssetInput';
-import { DebouncedSlider } from './components/DebouncedSlider';
-import { ReviewModal } from './components/ReviewModal';
 import {
     ChevronRight,
     ChevronDown,
@@ -47,9 +45,6 @@ import {
     CreditCard,
     Pencil,
     Plus,
-    PlusCircle,
-    SlidersHorizontal,
-    Trash2,
     X
 } from 'lucide-react';
 
@@ -66,29 +61,29 @@ const iconBadgeColors: Record<string, string> = {
 // --- Accordion Component ---
 const AccordionItem = ({ title, icon: Icon, children, isOpen, onToggle }: any) => {
     const badgeColor = iconBadgeColors[title] || 'icon-badge-teal';
-
+    
     return (
-        <div className={`mb-3 rounded-xl overflow-hidden transition-all duration-300 ${isOpen ? 'bg-slate-800/50' : ''}`}>
+        <div className="mb-2">
             <button
-                className={`w-full flex items-center justify-between p-3 transition-all duration-300 ${isOpen
-                    ? 'bg-slate-700/80'
-                    : 'hover:bg-white/5 rounded-xl'
-                    }`}
+                className={`w-full flex items-center justify-between p-4 rounded-xl transition-all duration-300 ${
+                    isOpen 
+                        ? 'glass-card-dark bg-white/10' 
+                        : 'hover:bg-white/5'
+                }`}
                 onClick={onToggle}
             >
                 <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg text-white ${badgeColor}`}>
-                        <Icon size={16} />
+                    <div className={`p-2.5 rounded-xl text-white ${badgeColor}`}>
+                        <Icon size={18} />
                     </div>
-                    <span className="font-semibold text-white/90 text-sm">{title}</span>
+                    <span className="font-semibold text-white/90">{title}</span>
                 </div>
-                <ChevronDown
-                    size={18}
-                    className={`text-white/60 transition-transform duration-300 ${isOpen ? 'rotate-0' : '-rotate-90'}`}
-                />
+                <div className={`p-1 rounded-xl transition-all duration-300 ${isOpen ? 'bg-white/20 rotate-0' : 'bg-white/10'}`}>
+                    {isOpen ? <ChevronDown size={16} className="text-white/80" /> : <ChevronRight size={16} className="text-white/60" />}
+                </div>
             </button>
             {isOpen && (
-                <div className="p-4 animate-slide-down">
+                <div className="p-4 mt-1 glass-panel rounded-xl animate-slide-down">
                     {children}
                 </div>
             )}
@@ -171,8 +166,6 @@ const DEFAULT_INPUTS: UserInputs = {
 
 const FULL_STATE_PENSION = 11502;
 
-
-
 const formatLargeMoney = (value: number) => {
     if (value >= 1000000) return `£${(value / 1000000).toFixed(2)}m`;
     if (value >= 10000) return `£${(value / 1000).toFixed(0)}k`;
@@ -194,9 +187,6 @@ const App: React.FC = () => {
                 if (Array.isArray(parsed) && parsed.length > 0) {
                     // DATA MIGRATION: Convert single mortgage to array if missing
                     return parsed.map((s: Scenario) => {
-                        // Ensure new fields are populated by merging with defaults
-                        s.data = { ...DEFAULT_INPUTS, ...s.data };
-
                         if (!s.data.mortgages && s.data.housingMode === 'mortgage' && s.data.mortgagePayment > 0) {
                             // Create a default mortgage from legacy data
                             s.data.mortgages = [{
@@ -211,11 +201,6 @@ const App: React.FC = () => {
                         } else if (!s.data.mortgages) {
                             s.data.mortgages = [];
                         }
-
-                        // Ensure lists are initialized
-                        if (!s.data.additionalIncomes) s.data.additionalIncomes = [];
-                        if (!s.data.investmentProperties) s.data.investmentProperties = [];
-
                         return s;
                     });
                 }
@@ -225,12 +210,9 @@ const App: React.FC = () => {
     });
     const [activeScenarioId, setActiveScenarioId] = useState<string>(scenarios[0].id);
 
-    // Auto-Save Effect (throttled for performance)
+    // Auto-Save Effect
     useEffect(() => {
-        const timeout = setTimeout(() => {
-            localStorage.setItem(SCENARIOS_KEY, JSON.stringify(scenarios));
-        }, 500);
-        return () => clearTimeout(timeout);
+        localStorage.setItem(SCENARIOS_KEY, JSON.stringify(scenarios));
     }, [scenarios]);
 
     // UI State
@@ -248,7 +230,6 @@ const App: React.FC = () => {
     const [isStrategyModalOpen, setStrategyModalOpen] = useState(false);
     const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
     const [advisorContext, setAdvisorContext] = useState<AdvisorContext>('manual');
-    const [isReviewModalOpen, setReviewModalOpen] = useState(false);
 
     // Input UI Toggles
     const [paysFullNI, setPaysFullNI] = useState(true);
@@ -277,18 +258,6 @@ const App: React.FC = () => {
 
     const inputs = activeScenario.data;
 
-    // Quick Controls display state (for instant feedback while debouncing heavy recalc)
-    const [displaySpending, setDisplaySpending] = useState(inputs.annualSpending);
-    const [displayRetirement, setDisplayRetirement] = useState(inputs.retirementAge);
-    const [displayPensionGrowth, setDisplayPensionGrowth] = useState(inputs.growthPension);
-
-    // Sync display values when inputs change (e.g., from other controls or initial load)
-    useEffect(() => {
-        setDisplaySpending(inputs.annualSpending);
-        setDisplayRetirement(inputs.retirementAge);
-        setDisplayPensionGrowth(inputs.growthPension);
-    }, [inputs.annualSpending, inputs.retirementAge, inputs.growthPension]);
-
     // Calculate Current Age dynamically based on birthYear
     const calculatedAge = useMemo(() => {
         return new Date().getFullYear() - (inputs.birthYear || 1984);
@@ -307,11 +276,8 @@ const App: React.FC = () => {
     // Recalculate whenever inputs change
     const results = useMemo(() => calculateProjection(engineInputs), [engineInputs]);
 
-    // Defer chart updates for smoother slider interaction
-    const deferredResults = useDeferredValue(results);
-
-    // Calculate summary stats (using deferred for non-critical display)
-    const finalResult = deferredResults[deferredResults.length - 1];
+    // Calculate summary stats
+    const finalResult = results[results.length - 1];
     const totalNetWorthEnd = finalResult ? finalResult.totalNetWorth : 0;
 
     const shortfallYear = results.find(r => r.shortfall > 100);
@@ -372,14 +338,7 @@ const App: React.FC = () => {
     const updateInput = (key: keyof UserInputs, value: any) => {
         setScenarios(prev => prev.map(s => {
             if (s.id === activeScenarioId) {
-                const newData = { ...s.data, [key]: value };
-
-                // Auto-update State Pension Age if birth year changes
-                if (key === 'birthYear') {
-                    newData.statePensionAge = getStatePensionAge(Number(value));
-                }
-
-                return { ...s, data: newData };
+                return { ...s, data: { ...s.data, [key]: value } };
             }
             return s;
         }));
@@ -444,105 +403,6 @@ const App: React.FC = () => {
         <>
             <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
 
-                {/* Quick Controls - Key Metrics */}
-                <div className="mb-4 p-3 rounded-xl bg-slate-800/50">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="icon-badge-teal p-2 rounded-xl text-white">
-                            <SlidersHorizontal size={16} />
-                        </div>
-                        <span className="text-sm font-bold text-white">Quick Controls</span>
-                    </div>
-
-                    {/* Outgoings Slider */}
-                    <div className="mb-3">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-medium text-white/60">Annual Spending</span>
-                            <span className="text-xs font-bold text-white">£{displaySpending?.toLocaleString()}</span>
-                        </div>
-                        <DebouncedSlider
-                            min={10000}
-                            max={100000}
-                            step={500}
-                            value={inputs.annualSpending}
-                            onDrag={setDisplaySpending}
-                            onChange={(v) => updateInput('annualSpending', v)}
-                        />
-                    </div>
-
-                    {/* Retirement Age Slider */}
-                    <div className="mb-3">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-medium text-white/60">Retirement Age</span>
-                            <span className="text-xs font-bold text-white">{displayRetirement}</span>
-                        </div>
-                        <DebouncedSlider
-                            min={50}
-                            max={75}
-                            step={1}
-                            value={inputs.retirementAge}
-                            onDrag={setDisplayRetirement}
-                            onChange={(v) => updateInput('retirementAge', v)}
-                        />
-                    </div>
-
-                    {/* Pension Fees Slider */}
-                    <div className="mb-3">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-medium text-white/60">Pension Fees</span>
-                            <span className="text-xs font-bold text-white">{inputs.pensionFees || 0}%</span>
-                        </div>
-                        <DebouncedSlider
-                            min={0}
-                            max={3}
-                            step={0.1}
-                            value={inputs.pensionFees || 0}
-                            onChange={(v) => updateInput('pensionFees', v)}
-                        />
-                        {(() => {
-                            // Fee Overspend Check (Total Opportunity Cost)
-                            const finalRes = deferredResults[deferredResults.length - 1]; // Use deferred for stable UI
-                            if (!finalRes || !finalRes.benchmarkPensionPot) return null;
-
-                            const totalOpportunityCost = finalRes.benchmarkPensionPot - finalRes.balancePension;
-
-                            // Threshold: Show if opportunity cost > £10k (material impact)
-                            if (totalOpportunityCost > 10000) {
-                                return (
-                                    <div className="mt-2 p-3 bg-red-400/20 border border-red-500/50 rounded-lg animate-in fade-in slide-in-from-top-2">
-                                        <div className="text-[10px] text-red-200 uppercase font-bold mb-1 flex items-center gap-1">
-                                            <AlertTriangle size={12} className="text-red-400" />
-                                            Fee Warning
-                                        </div>
-                                        <div className="text-xs text-white mb-2 leading-relaxed">
-                                            High fees could cost you <span className="font-bold text-red-300">£{(totalOpportunityCost / 1000).toFixed(0)}k</span> in lost compound growth over your lifetime.
-                                        </div>
-                                        <button className="w-full py-1.5 bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold rounded transition shadow-sm hover:shadow-md">
-                                            Compare Platforms
-                                        </button>
-                                    </div>
-                                );
-                            }
-                            return null;
-                        })()}
-                    </div>
-
-                    {/* Pension Yield Slider */}
-                    <div className="mb-2">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-medium text-white/60">Pension Growth</span>
-                            <span className="text-xs font-bold text-white">{displayPensionGrowth}%</span>
-                        </div>
-                        <DebouncedSlider
-                            min={0}
-                            max={12}
-                            step={0.25}
-                            value={inputs.growthPension}
-                            onDrag={setDisplayPensionGrowth}
-                            onChange={(v) => updateInput('growthPension', v)}
-                        />
-                    </div>
-                </div>
-
                 {/* PILLAR 1: INCOME */}
                 <AccordionItem
                     title="Income & Earnings"
@@ -553,36 +413,20 @@ const App: React.FC = () => {
                     <div className="space-y-3">
                         {/* Salary */}
                         <SmartInput
-                            label="Main Income"
-                            subLabel={inputs.isSalaryGross ? "Annual gross income" : "Annual net income"}
+                            label="Employment Salary"
+                            subLabel="Annual gross income"
                             value={inputs.currentSalary}
                             onChange={(v) => updateInput('currentSalary', v)}
                             min={0}
                             max={200000}
                             step={1000}
                             prefix="£"
-                            rightLabel="Annual change"
+                            rightLabel="Growth"
                             rightValue={inputs.salaryGrowth ?? 0}
                             onRightChange={(v) => updateInput('salaryGrowth', v)}
                             colorClass="blue"
                         >
-                            <div className="flex items-center justify-between">
-                                <p className="text-xs text-slate-400">Stop work at {inputs.retirementAge}</p>
-                                <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                                    <button
-                                        onClick={() => updateInput('isSalaryGross', true)}
-                                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition ${inputs.isSalaryGross ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                                    >
-                                        Gross
-                                    </button>
-                                    <button
-                                        onClick={() => updateInput('isSalaryGross', false)}
-                                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition ${!inputs.isSalaryGross ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                                    >
-                                        Net
-                                    </button>
-                                </div>
-                            </div>
+                            <p className="text-[10px] text-slate-400">Stops at retirement age {inputs.retirementAge}</p>
                         </SmartInput>
 
                         {/* Dividend Income */}
@@ -597,15 +441,32 @@ const App: React.FC = () => {
                             prefix="£"
                             colorClass="purple"
                         >
-                            <p className="text-xs text-slate-400">Taxed at dividend rates</p>
+                            <p className="text-[10px] text-slate-400">Taxed at dividend rates</p>
                         </SmartInput>
+
+                        {/* Retirement Age Slider (Moved from Pensions) */}
+                        <div className="glass-card p-4 rounded-xl card-hover">
+                            <SliderInput
+                                label="Target Retirement Age"
+                                min={45} max={80}
+                                value={inputs.retirementAge}
+                                onChange={v => {
+                                    updateInput('retirementAge', v);
+                                    if (v > inputs.semiRetirementAge && inputs.hasSemiRetirement) {
+                                        updateInput('semiRetirementAge', v);
+                                    }
+                                    if (!inputs.additionalIncomeEndAge) updateInput('additionalIncomeEndAge', v);
+                                }}
+                            />
+                            <p className="text-[10px] text-slate-500 mt-2">Age when main salary stops.</p>
+                        </div>
 
                         {/* Additional Income / Semi-Retirement */}
                         <div className="glass-card p-4 rounded-xl card-hover">
                             <div className="flex justify-between items-center">
                                 <div>
                                     <div className="font-bold text-sm text-slate-800">Additional Income</div>
-                                    <div className="text-xs text-slate-400">Side hustles, consulting, etc</div>
+                                    <div className="text-[10px] text-slate-500">Side hustles, consulting, etc.</div>
                                 </div>
                                 <div className="text-right">
                                     {(inputs.additionalIncomes && inputs.additionalIncomes.length > 0) ? (
@@ -777,6 +638,30 @@ const App: React.FC = () => {
                             type="pension"
                             colorClass="orange" // Distinguish visual
                         />
+
+                        {/* 25% Tax Free Lump Sum Config */}
+                        <div className="glass-card p-4 rounded-xl mt-3 card-hover border-l-4 border-l-amber-400">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <div className="text-xs font-bold text-slate-800">Tax Free Cash Strategy</div>
+                                    <div className="text-[10px] text-slate-500 mt-0.5">Take 25% tax free at {Math.max(inputs.retirementAge, inputs.pensionAccessAge)}?</div>
+                                </div>
+                                <div className="flex bg-slate-100 rounded-xl p-0.5 border border-slate-200">
+                                <button
+                                    onClick={() => updateInput('pensionLumpSumMode', 'drip')}
+                                    className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${inputs.pensionLumpSumMode === 'drip' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    Drip Feed
+                                </button>
+                                <button
+                                    onClick={() => updateInput('pensionLumpSumMode', 'upfront')}
+                                    className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${inputs.pensionLumpSumMode === 'upfront' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    All at Once
+                                </button>
+                            </div>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Defined Benefit Pensions */}
@@ -1039,31 +924,19 @@ const App: React.FC = () => {
                         inputs.events.length > 0 ? (
                             <div className="space-y-2">
                                 {inputs.events.map(e => (
-                                    <div key={e.id} className={`glass-card p-3 rounded-xl flex justify-between items-center text-xs card-hover group ${e.type === 'income' ? 'border-l-4 border-l-emerald-400' : 'border-l-4 border-l-red-400'}`}>
+                                    <div key={e.id} className={`glass-card p-3 rounded-xl flex justify-between items-center text-xs card-hover ${e.type === 'income' ? 'border-l-4 border-l-emerald-400' : 'border-l-4 border-l-red-400'}`}>
                                         <div className="flex items-center gap-2">
                                             <div className={`${e.type === 'income' ? 'icon-badge-green' : 'icon-badge-rose'} p-1.5 rounded-xl text-white`}>
                                                 <Calendar size={12} />
                                             </div>
                                             <div>
                                                 <span className="font-semibold text-slate-700">{e.name}</span>
-                                                <span className="text-slate-400 ml-2">Age {e.age}{e.isRecurring && e.endAge ? `-${e.endAge}` : ''}</span>
+                                                <span className="text-slate-400 ml-2">Age {e.age}</span>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className={e.type === 'income' ? 'text-emerald-600 font-bold' : 'text-red-500 font-bold'}>
-                                                {e.type === 'income' ? '+' : '-'}£{(e.amount / 1000).toFixed(1)}k
-                                            </span>
-                                            <button
-                                                onClick={() => {
-                                                    const updated = inputs.events.filter(ev => ev.id !== e.id);
-                                                    updateInput('events', updated);
-                                                }}
-                                                className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                                                title="Delete event"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
+                                        <span className={e.type === 'income' ? 'text-emerald-600 font-bold' : 'text-red-500 font-bold'}>
+                                            {e.type === 'income' ? '+' : '-'}£{(e.amount / 1000).toFixed(1)}k
+                                        </span>
                                     </div>
                                 ))}
                             </div>
@@ -1102,46 +975,6 @@ const App: React.FC = () => {
                                 Allocation & Withdrawal Order
                             </div>
                         </button>
-
-                        {/* 25% Tax Free Lump Sum Config */}
-                        <div className="glass-card p-4 rounded-xl mt-3 card-hover border-l-4 border-l-amber-400">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="text-sm font-semibold text-slate-800">Tax Free Cash Strategy</div>
-                                    <div className="text-xs text-slate-400 mt-0.5">Take 25% tax free at {Math.max(inputs.retirementAge, inputs.pensionAccessAge)}?</div>
-                                </div>
-                                <div className="flex bg-slate-100 rounded-xl p-0.5 border border-slate-200">
-                                    <button
-                                        onClick={() => updateInput('pensionLumpSumMode', 'drip')}
-                                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${inputs.pensionLumpSumMode === 'drip' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                    >
-                                        Drip Feed
-                                    </button>
-                                    <button
-                                        onClick={() => updateInput('pensionLumpSumMode', 'upfront')}
-                                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${inputs.pensionLumpSumMode === 'upfront' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                    >
-                                        All at Once
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Maximize ISA Allowance */}
-                        <div className="glass-card p-4 rounded-xl mt-3 card-hover border-l-4 border-l-emerald-400">
-                            <label className="flex items-center justify-between cursor-pointer">
-                                <div>
-                                    <div className="text-sm font-semibold text-slate-800">Maximize ISA Allowance</div>
-                                    <div className="text-xs text-slate-400 mt-0.5">Move funds from GIA/Cash to ISA annually</div>
-                                </div>
-                                <input
-                                    type="checkbox"
-                                    className="rounded text-emerald-600 focus:ring-emerald-500 w-5 h-5"
-                                    checked={inputs.maxISAFromGIA}
-                                    onChange={e => updateInput('maxISAFromGIA', e.target.checked)}
-                                />
-                            </label>
-                        </div>
                     </div>
 
                     <SliderInput
@@ -1181,6 +1014,28 @@ const App: React.FC = () => {
                         />
                     </div>
 
+                    {/* Optimization Checkbox */}
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-4">
+                        <label className="flex items-start gap-3 cursor-pointer">
+                            <div className="mt-0.5">
+                                <input
+                                    type="checkbox"
+                                    className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                                    checked={inputs.maxISAFromGIA}
+                                    onChange={e => updateInput('maxISAFromGIA', e.target.checked)}
+                                />
+                            </div>
+                            <div>
+                                <span className="text-xs font-bold text-indigo-900 flex items-center gap-1">
+                                    Maximize ISA Allowance
+                                </span>
+                                <p className="text-[10px] text-indigo-800 leading-tight mt-1">
+                                    Move funds from GIA/Cash to ISA annually.
+                                </p>
+                            </div>
+                        </label>
+                    </div>
+
                 </AccordionItem >
 
                 {/* Mobile Spacer */}
@@ -1215,10 +1070,11 @@ const App: React.FC = () => {
 
             {/* --- Mobile Impact Bar --- */}
             {mobileTab === 'inputs' && (
-                <div className={`md:hidden px-4 py-3 flex items-center justify-between text-xs sticky top-0 z-10 shadow-lg backdrop-blur-lg ${fundsRunOutAge
-                    ? 'bg-red-600 text-white'
-                    : 'bg-teal-600 text-white'
-                    }`}>
+                <div className={`md:hidden px-4 py-3 flex items-center justify-between text-xs sticky top-0 z-10 shadow-lg backdrop-blur-lg ${
+                    fundsRunOutAge 
+                        ? 'bg-red-600 text-white' 
+                        : 'bg-teal-600 text-white'
+                }`}>
                     <div className="flex flex-col">
                         <span className="opacity-80 text-[10px] font-medium uppercase tracking-wide">Projected Legacy</span>
                         <span className="font-bold text-lg number-display">{formatLargeMoney(totalNetWorthEnd)}</span>
@@ -1285,7 +1141,69 @@ const App: React.FC = () => {
         ${mobileTab === 'results' ? 'flex' : 'hidden md:flex'}
       `}>
 
+                {/* Traffic Light Status Banner */}
+                {(() => {
+                    const yearsToShortfall = fundsRunOutAge ? fundsRunOutAge - calculatedAge : null;
+                    const legacyPerYear = totalNetWorthEnd / Math.max(1, inputs.lifeExpectancy - inputs.retirementAge);
 
+                    // Determine status
+                    let status: 'green' | 'amber' | 'red' = 'green';
+                    let statusMessage = '';
+                    let statusSubtext = '';
+
+                    if (fundsRunOutAge && yearsToShortfall && yearsToShortfall < 30) {
+                        status = 'red';
+                        statusMessage = "Let's look at some options";
+                        statusSubtext = `Your funds may run out at age ${fundsRunOutAge}. Small changes can make a big difference.`;
+                    } else if (legacyPerYear < inputs.annualSpending * 0.5) {
+                        status = 'amber';
+                        statusMessage = "You're getting there";
+                        statusSubtext = "A few tweaks could give you more security in retirement.";
+                    } else {
+                        status = 'green';
+                        statusMessage = "You're on track";
+                        statusSubtext = `Projected to have ${formatLargeMoney(totalNetWorthEnd)} at ${inputs.lifeExpectancy}. That's ${formatLargeMoney(legacyPerYear)}/year of retirement.`;
+                    }
+
+                    const statusStyles = {
+                        green: 'bg-teal-500 text-white',
+                        amber: 'bg-amber-500 text-white',
+                        red: 'bg-red-500 text-white'
+                    };
+
+                    if (warningDismissed) return null;
+
+                    return (
+                        <div className={`${statusStyles[status]} px-4 md:px-6 py-3.5 flex items-center gap-4 relative`}>
+                            <div className="w-3 h-3 rounded-full flex-shrink-0 bg-white/90" />
+                            <div className="flex-1 min-w-0 pr-8">
+                                <span className="font-bold text-sm md:text-base">{statusMessage}</span>
+                                <span className="text-xs md:text-sm opacity-90 ml-2 hidden sm:inline">{statusSubtext}</span>
+                                <p className="text-xs opacity-90 sm:hidden truncate">{statusSubtext}</p>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                {status !== 'green' && (
+                                    <button
+                                        onClick={() => {
+                                            setAdvisorContext(status === 'red' ? 'shortfall' : 'manual');
+                                            setAdvisorModalOpen(true);
+                                        }}
+                                        className="text-xs font-bold bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-xl flex-shrink-0 transition-all"
+                                    >
+                                        Get help
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setWarningDismissed(true)}
+                                    className="p-1.5 hover:bg-white/20 rounded-xl transition text-white/80 hover:text-white"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Stats Header */}
                 <div className="glass-card border-b border-slate-100 p-4 md:p-6 flex flex-col md:flex-row md:items-start justify-between z-10 gap-4 md:gap-0">
@@ -1322,69 +1240,73 @@ const App: React.FC = () => {
                                 <span>Retire at <strong className="text-slate-700">{inputs.retirementAge}</strong></span>
                             </div>
                         </div>
-                        {/* Mobile Review Plan Button */}
+                        {/* Mobile Sanity Check Button */}
                         <button
-                            onClick={() => setReviewModalOpen(true)}
-                            className="md:hidden p-2.5 bg-teal-600 text-white rounded-xl"
+                            onClick={openManualAdvisor}
+                            className="md:hidden p-2.5 bg-teal-500 text-white rounded-xl"
                         >
                             <UserCheck size={20} />
                         </button>
                     </div>
 
-                    <div className="flex gap-3 md:gap-4 w-full md:w-auto items-center">
-                        {/* Slim Status Box */}
-                        {(() => {
-                            // Calculate margin status
-                            const isShortfall = fundsRunOutAge !== null;
-                            const isTightMargin = !isShortfall && totalNetWorthEnd > 0 && totalNetWorthEnd < inputs.annualSpending * 3;
-
-                            let statusColor = 'bg-green-50 border-green-200';
-                            let textColor = 'text-green-700';
-                            let label = 'Legacy';
-                            let value = totalNetWorthEnd;
-
-                            if (isShortfall) {
-                                statusColor = 'bg-red-50 border-red-200';
-                                textColor = 'text-red-600';
-                                label = `Shortfall at ${fundsRunOutAge}`;
-                                // Find the shortfall amount
-                                const shortfallResult = deferredResults.find(r => r.age === fundsRunOutAge);
-                                value = shortfallResult?.shortfall || 0;
-                            } else if (isTightMargin) {
-                                statusColor = 'bg-amber-50 border-amber-200';
-                                textColor = 'text-amber-700';
-                                label = 'Tight Margin';
-                            }
-
-                            return (
-                                <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border ${statusColor}`}>
-                                    {isShortfall ? (
-                                        <AlertTriangle size={20} className="text-red-500" />
-                                    ) : isTightMargin ? (
-                                        <AlertTriangle size={20} className="text-amber-500" />
-                                    ) : (
-                                        <ShieldCheck size={20} className="text-green-500" />
-                                    )}
-                                    <div className="flex flex-col">
-                                        <span className={`text-[10px] font-bold uppercase tracking-wide ${textColor}`}>
-                                            {label}
-                                        </span>
-                                        <span className={`text-lg font-extrabold ${textColor}`}>
-                                            {isShortfall ? `-${formatLargeMoney(value)}` : formatLargeMoney(value)}
-                                        </span>
-                                    </div>
-                                </div>
-                            );
-                        })()}
-
-                        {/* Review Plan Button */}
+                    <div className="flex gap-3 md:gap-4 w-full md:w-auto items-start">
                         <button
-                            onClick={() => setReviewModalOpen(true)}
-                            className="flex items-center gap-2 px-4 py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-xl transition-all"
+                            onClick={openManualAdvisor}
+                            className="hidden md:flex items-center gap-2 px-5 py-3 bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl transition-all"
                         >
                             <UserCheck size={18} />
-                            <span className="hidden md:inline">Review Plan</span>
+                            <span>Sanity Check</span>
                         </button>
+
+                        {/* Funds Last Alert Widget */}
+                        <button
+                            onClick={() => {
+                                if (fundsRunOutAge) {
+                                    setAdvisorContext('shortfall');
+                                    setAdvisorModalOpen(true);
+                                }
+                            }}
+                            disabled={!fundsRunOutAge}
+                            className={`flex-1 md:flex-none px-3 py-2 md:px-5 md:py-3 rounded-xl transition-all duration-300 flex flex-col items-center min-w-[100px] md:min-w-[130px] relative overflow-hidden group card-hover ${fundsRunOutAge
+                                ? 'bg-red-50 border border-red-200 cursor-pointer'
+                                : 'bg-teal-50 border border-teal-200 cursor-default'
+                                }`}
+                        >
+                            <span className={`text-[10px] md:text-xs font-bold uppercase tracking-wide z-10 ${fundsRunOutAge ? 'text-red-600' : 'text-teal-600'}`}>Funds Last</span>
+
+                            <div className="flex items-center gap-1 mt-1 z-10">
+                                {fundsRunOutAge ? (
+                                    <div className="flex flex-col items-center">
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-lg md:text-2xl font-extrabold text-red-600 number-display">Age {fundsRunOutAge}</span>
+                                            <AlertTriangle size={18} className="text-red-500 animate-pulse hidden md:block" />
+                                        </div>
+                                        <div className="bg-red-500 text-white text-[10px] font-bold px-2.5 py-1 rounded-full mt-1.5 flex items-center gap-1">
+                                            <span>Fix Shortfall</span>
+                                            <ArrowRight size={10} />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1">
+                                        <ShieldCheck size={18} className="text-teal-500" />
+                                        <span className="text-lg md:text-2xl font-extrabold text-teal-600 number-display">{inputs.lifeExpectancy}+</span>
+                                    </div>
+                                )}
+                            </div>
+                        </button>
+
+                        {/* Legacy Balance */}
+                        <div className="flex-1 md:flex-none px-3 py-2 md:px-5 md:py-3 rounded-xl stat-card stat-card-primary flex flex-col items-center min-w-[100px] md:min-w-[140px] card-hover">
+                            <span className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-wide">At Age {inputs.lifeExpectancy}</span>
+                            <span className="text-lg md:text-2xl font-extrabold text-gradient-primary mt-0.5 number-display">
+                                {formatLargeMoney(totalNetWorthEnd)}
+                            </span>
+                            <span className="text-[9px] md:text-[10px] text-slate-400 mt-0.5 font-medium">
+                                {totalNetWorthEnd > 0 ? (
+                                    `≈ ${formatLargeMoney(totalNetWorthEnd / Math.max(1, inputs.lifeExpectancy - inputs.retirementAge))}/yr`
+                                ) : 'depleted'}
+                            </span>
+                        </div>
                     </div>
                 </div>
 
@@ -1401,7 +1323,7 @@ const App: React.FC = () => {
                             onClick={() => setChartMode('assets')}
                             className={`flex-1 md:flex-none justify-center px-4 py-2 text-xs md:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all ${chartMode === 'assets' ? 'bg-teal-500 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
-                            <LineChart size={16} /> Asset Value
+                            <LineChart size={16} /> Asset Growth
                         </button>
                     </div>
 
@@ -1445,10 +1367,30 @@ const App: React.FC = () => {
 
                 {/* Main Chart Area */}
                 <div className="flex-1 px-2 md:px-6 pb-20 md:pb-6 pt-2 relative">
+                    {fundsRunOutAge && (
+                        <div className="absolute top-6 left-1/2 -translate-x-1/2 md:translate-x-0 md:left-auto md:right-12 z-20 pointer-events-none">
+                            <div className="bg-red-500 text-white px-5 py-4 rounded-xl shadow-lg flex items-center gap-4 pointer-events-auto animate-slide-up hover:bg-red-600 transition-all cursor-pointer"
+                                onClick={() => {
+                                    setAdvisorContext('shortfall');
+                                    setAdvisorModalOpen(true);
+                                }}
+                            >
+                                <div className="bg-white/20 p-2.5 rounded-lg">
+                                    <AlertTriangle size={22} className="text-white" />
+                                </div>
+                                <div>
+                                    <div className="font-bold text-base">Funds Run Out at Age {fundsRunOutAge}</div>
+                                    <div className="text-xs text-red-100 font-medium flex items-center gap-1 mt-0.5">
+                                        View Professional Solutions <ChevronRight size={12} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-                    <div className="absolute inset-x-2 md:inset-x-6 inset-y-2 bottom-20 md:bottom-6 bg-white rounded-xl shadow-xl p-3 md:p-5">
+                    <div className="absolute inset-x-2 md:inset-x-6 inset-y-2 bottom-20 md:bottom-6 glass-card rounded-xl shadow-xl p-3 md:p-5">
                         <ResultsChart
-                            data={deferredResults}
+                            data={results}
                             mode={chartMode}
                             assetVisibility={assetVisibility}
                             pensionAccessAge={inputs.pensionAccessAge}
@@ -1571,15 +1513,6 @@ const App: React.FC = () => {
                 isOpen={isAdvisorModalOpen}
                 onClose={() => setAdvisorModalOpen(false)}
                 context={advisorContext}
-            />
-
-            <ReviewModal
-                isOpen={isReviewModalOpen}
-                onClose={() => setReviewModalOpen(false)}
-                inputs={inputs}
-                results={results}
-                fundsRunOutAge={fundsRunOutAge}
-                finalNetWorth={totalNetWorthEnd}
             />
 
         </div>

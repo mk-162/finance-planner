@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { UserInputs } from '../types';
 import { AssetInput } from './AssetInput';
 import { SmartInput } from './SmartInput';
+import { calculateProjection, getStatePensionAge } from '../services/calculationEngine';
 import { ChevronRight, ChevronLeft, Check, Target, Wallet, TrendingUp, Home, Calendar, CreditCard, Building, ShieldCheck, Plus, Trash2 } from 'lucide-react';
 import { NumberInput, SimpleFormattedInput, SliderInput } from './InputSection';
 
@@ -167,7 +168,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                         <input
                             type="range" min={1955} max={2005} step={1}
                             value={data.birthYear || 1984}
-                            onChange={(e) => update('birthYear', Number(e.target.value))}
+                            onChange={(e) => {
+                                const year = Number(e.target.value);
+                                update('birthYear', year);
+                                update('statePensionAge', getStatePensionAge(year));
+                            }}
                             className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                         />
                     </div>

@@ -1,6 +1,4 @@
-
-
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SimpleFormattedInput } from './InputSection';
 
 interface SmartInputProps {
@@ -39,37 +37,56 @@ export const SmartInput: React.FC<SmartInputProps> = ({
     children,
     colorClass = 'blue'
 }) => {
+    // Debouncing for slider
+    const [localValue, setLocalValue] = useState(value);
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    useEffect(() => { setLocalValue(value); }, [value]);
+
+    const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newValue = Number(e.target.value);
+        setLocalValue(newValue);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        timeoutRef.current = setTimeout(() => onChange(newValue), 150);
+    };
+
+    useEffect(() => {
+        return () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); };
+    }, []);
+
     return (
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm mb-3">
+        <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm mb-3">
             {/* Header Row: Label + Inputs */}
-            <div className="flex justify-between items-start mb-4">
-                <div className="flex-1 pr-4 mt-1">
-                    <div className="font-bold text-sm text-slate-800 leading-tight">{label}</div>
-                    {subLabel && <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{subLabel}</div>}
+            <div className="flex justify-between items-start mb-3">
+                {/* Left: Label + Sub-label */}
+                <div>
+                    <div className="text-sm font-semibold text-slate-800">{label}</div>
+                    {subLabel && <div className="text-xs text-slate-400">{subLabel}</div>}
                 </div>
 
-                <div className="flex items-center gap-3">
+                {/* Right: Input Fields */}
+                <div className="flex items-center gap-2">
                     {/* Main Value Input */}
-                    <div className="relative">
-                        <SimpleFormattedInput
-                            value={value}
-                            onChange={onChange}
-                            prefix={prefix}
-                            className="w-28 py-1 px-2 text-right font-bold text-slate-800 bg-white border border-slate-300 rounded focus:ring-2 focus:ring-blue-100 outline-none transition-shadow"
-                        />
-                    </div>
+                    <SimpleFormattedInput
+                        value={localValue}
+                        onChange={onChange}
+                        prefix={prefix}
+                        className="w-24 text-right text-sm font-bold bg-slate-50 border border-slate-200 rounded-md p-1.5 text-slate-700"
+                    />
 
-                    {/* Secondary Input (Growth/Rate) */}
-                    {onRightChange !== undefined && rightValue !== undefined && (
-                        <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded px-2 py-1 h-8">
-                            {rightLabel && <span className="text-[9px] font-bold text-slate-400 uppercase mr-1">{rightLabel}</span>}
-                            <div className="relative w-10">
+                    {/* Secondary Input (e.g. Growth %) */}
+                    {rightLabel && onRightChange && (
+                        <div className="flex items-center gap-0.5 bg-slate-50 rounded-md p-1.5 border border-slate-200">
+                            <span className="text-[10px] text-slate-400 font-medium mr-1">{rightLabel}</span>
+                            <div className="w-12">
                                 <input
                                     type="number"
+                                    min={0}
+                                    max={15}
                                     step={0.1}
                                     value={rightValue}
                                     onChange={e => onRightChange(Number(e.target.value))}
-                                    className="w-full text-right text-xs font-bold bg-transparent outline-none"
+                                    className="w-full text-right text-xs font-bold bg-transparent outline-none text-slate-700"
                                 />
                             </div>
                             <span className="text-[10px] text-slate-400 font-medium">%</span>
@@ -85,9 +102,9 @@ export const SmartInput: React.FC<SmartInputProps> = ({
                     min={min}
                     max={max}
                     step={step}
-                    value={Math.min(Math.max(value, min), max)}
-                    onChange={e => onChange(Number(e.target.value))}
-                    className={`w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-${colorClass}-600 focus:outline-none focus:ring-2 focus:ring-${colorClass}-100`}
+                    value={localValue}
+                    onChange={handleSliderChange}
+                    className={`w-full h-1.5 bg-slate-100 rounded-sm appearance-none cursor-pointer accent-${colorClass}-600 focus:outline-none focus:ring-2 focus:ring-${colorClass}-100`}
                 />
             </div>
 
