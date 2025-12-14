@@ -148,6 +148,7 @@ export interface UserInputs {
 
   // Outgoings
   annualSpending: number; // General spending EXCLUDING housing
+
   spendingTaperAge: number;
   spendingTaperRate: number; // Percentage
 
