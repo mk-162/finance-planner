@@ -46,7 +46,11 @@ const sanitizeInputs = (input: any): UserInputs => {
         events: Array.isArray(input.events) ? input.events : [],
         loans: Array.isArray(input.loans) ? input.loans : [],
         investmentProperties: Array.isArray(input.investmentProperties) ? input.investmentProperties : [],
-        dbPensions: Array.isArray(input.dbPensions) ? input.dbPensions : []
+        dbPensions: Array.isArray(input.dbPensions) ? input.dbPensions : [],
+        mortgages: Array.isArray(input.mortgages) ? input.mortgages : [],
+        additionalIncomes: Array.isArray(input.additionalIncomes) ? input.additionalIncomes : [],
+        // Enforce numeric defaults for critical fields
+        missingNIYears: typeof input.missingNIYears === 'number' ? input.missingNIYears : 0
     };
 };
 
@@ -209,7 +213,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </button>
                 </div>
 
-                <div className="p-6 overflow-y-auto min-h-[300px]">
+                <div className="p-6 overflow-y-auto min-h-[300px] flex-1">
 
                     {/* Tab 1: Personal Details */}
                     {activeTab === 'plan' && (
@@ -267,7 +271,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </button>
                             </div>
 
-                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                            <div className="space-y-2">
                                 {scenarios.map(s => (
                                     <div
                                         key={s.id}
@@ -370,7 +374,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         className="flex flex-col items-center justify-center gap-2 p-4 bg-white border border-slate-200 rounded-sm hover:bg-slate-50 transition text-slate-600 text-sm font-medium"
                                     >
                                         <Download size={24} className="text-blue-600" />
-                                        Export JSON
+                                        Export Data
                                     </button>
 
                                     <button
@@ -378,7 +382,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         className="flex flex-col items-center justify-center gap-2 p-4 bg-white border border-slate-200 rounded-sm hover:bg-slate-50 transition text-slate-600 text-sm font-medium"
                                     >
                                         <Upload size={24} className="text-green-600" />
-                                        Import JSON
+                                        Import Data
                                     </button>
                                     <input
                                         type="file"

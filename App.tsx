@@ -1,7 +1,7 @@
 
 
 import React, { useState, useMemo, useEffect, useDeferredValue } from 'react';
-import { UserInputs, FinancialEvent, Scenario } from './types';
+import { UserInputs, FinancialEvent, Scenario, Loan, AdditionalIncome, InvestmentProperty, DefinedBenefitPension, Mortgage } from './types';
 import { calculateProjection, getStatePensionAge } from './services/calculationEngine';
 import { ResultsChart, AssetVisibility } from './components/ResultsChart';
 import { SliderInput, NumberInput, SimpleFormattedInput } from './components/InputSection';
@@ -16,10 +16,15 @@ import { PropertyModal } from './components/PropertyModal';
 import { MortgageModal } from './components/MortgageModal';
 import { DBPensionModal } from './components/DBPensionModal';
 import { AdditionalIncomeModal } from './components/AdditionalIncomeModal';
+import { StatePensionModal, FULL_STATE_PENSION as MODAL_FULL_SP, calculateStatePension as calcSP } from './components/StatePensionModal';
 import { AssetInput } from './components/AssetInput';
 import { DebouncedSlider } from './components/DebouncedSlider';
+import { Tooltip } from './components/Tooltip';
 import { ReviewModal } from './components/ReviewModal';
 import { StatusBanner } from './components/StatusBanner';
+import { TaxBreakdownModal } from './components/TaxBreakdownModal';
+import { BrokerComparison } from './pages/BrokerComparison';
+import { YearlyResult } from './types';
 import {
     ChevronRight,
     ChevronDown,
@@ -31,6 +36,7 @@ import {
     BarChart2,
     LineChart,
     Settings,
+    Save,
     Edit3,
     PieChart,
     UserCheck,
@@ -51,7 +57,10 @@ import {
     PlusCircle,
     SlidersHorizontal,
     Trash2,
-    X
+    X,
+    CheckCircle,
+    Calculator,
+    PiggyBank
 } from 'lucide-react';
 
 // --- Icon Badge Color Map - All use primary teal accent ---
@@ -118,6 +127,7 @@ const DEFAULT_INPUTS: UserInputs = {
 
     statePension: 11502,
     statePensionAge: 68,
+    missingNIYears: 0,
 
     // Housing Defaults
     housingMode: 'mortgage',
@@ -170,9 +180,8 @@ const DEFAULT_INPUTS: UserInputs = {
     dbPensions: []
 };
 
-const FULL_STATE_PENSION = 11502;
-
-
+// State Pension full amount (2024/25 rate)
+const FULL_STATE_PENSION = 11502; // £221.20/week * 52
 
 const formatLargeMoney = (value: number) => {
     if (value >= 1000000) return `£${(value / 1000000).toFixed(2)}m`;
@@ -213,8 +222,21 @@ const App: React.FC = () => {
                             s.data.mortgages = [];
                         }
 
-                        // Ensure lists are initialized
-                        if (!s.data.additionalIncomes) s.data.additionalIncomes = [];
+                        // Migrate legacy additionalIncome to additionalIncomes array
+                        if (!s.data.additionalIncomes || s.data.additionalIncomes.length === 0) {
+                            if (s.data.additionalIncome && s.data.additionalIncome > 0) {
+                                s.data.additionalIncomes = [{
+                                    id: 'legacy-additional-income',
+                                    name: 'Additional Income',
+                                    amount: s.data.additionalIncome,
+                                    startAge: s.data.additionalIncomeStartAge || s.data.retirementAge || 65,
+                                    endAge: s.data.additionalIncomeEndAge || ((s.data.retirementAge || 65) + 5),
+                                    inflationLinked: true
+                                }];
+                            } else {
+                                s.data.additionalIncomes = [];
+                            }
+                        }
                         if (!s.data.investmentProperties) s.data.investmentProperties = [];
 
                         return s;
@@ -237,19 +259,29 @@ const App: React.FC = () => {
     // UI State
     const [activeSection, setActiveSection] = useState<string>('income');
     const [isEventModalOpen, setEventModalOpen] = useState(false);
+    const [eventToEdit, setEventToEdit] = useState<FinancialEvent | null>(null); // New: Track edit state
+    const [loanToEdit, setLoanToEdit] = useState<Loan | null>(null); // New: Track edit state
     const [isDebtModalOpen, setDebtModalOpen] = useState(false);
+    const [propertyToEdit, setPropertyToEdit] = useState<InvestmentProperty | null>(null); // New: Track edit state
     const [isPropertyModalOpen, setPropertyModalOpen] = useState(false);
+    const [mortgageToEdit, setMortgageToEdit] = useState<Mortgage | null>(null); // New: Track edit state
     const [isMortgageModalOpen, setMortgageModalOpen] = useState(false); // New
+    const [dbPensionToEdit, setDBPensionToEdit] = useState<DefinedBenefitPension | null>(null); // New: Track edit state
     const [isAdditionalIncomeModalOpen, setAdditionalIncomeModalOpen] = useState(false); // New
+    const [additionalIncomeToEdit, setAdditionalIncomeToEdit] = useState<AdditionalIncome | null>(null); // New: Track edit state
     const [isDBPensionModalOpen, setDBPensionModalOpen] = useState(false);
+    const [isStatePensionModalOpen, setStatePensionModalOpen] = useState(false);
 
     const [isSettingsOpen, setSettingsOpen] = useState(false);
     const [settingsTab, setSettingsTab] = useState<'plan' | 'scenarios' | 'data'>('plan');
     const [isAdvisorModalOpen, setAdvisorModalOpen] = useState(false);
     const [isStrategyModalOpen, setStrategyModalOpen] = useState(false);
+    const [selectedTaxYear, setSelectedTaxYear] = useState<YearlyResult | null>(null);
+    const [showTaxYearDropdown, setShowTaxYearDropdown] = useState(false);
     const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
     const [advisorContext, setAdvisorContext] = useState<AdvisorContext>('manual');
     const [isReviewModalOpen, setReviewModalOpen] = useState(false);
+    const [showBrokerComparison, setShowBrokerComparison] = useState(false);
 
     // Input UI Toggles
     const [paysFullNI, setPaysFullNI] = useState(true);
@@ -318,10 +350,10 @@ const App: React.FC = () => {
     const shortfallYear = results.find(r => r.shortfall > 100);
     const fundsRunOutAge = shortfallYear ? shortfallYear.age : null;
 
-    // Check NI status on load
+    // Check NI status on load and when state pension changes
     useEffect(() => {
         setPaysFullNI(inputs.statePension >= 11000);
-    }, [activeScenarioId]);
+    }, [activeScenarioId, inputs.statePension]);
 
     // --- Effects ---
 
@@ -446,18 +478,20 @@ const App: React.FC = () => {
             <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
 
                 {/* Quick Controls - Key Metrics */}
-                <div className="mb-4 p-3 rounded-xl bg-slate-800/50">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="icon-badge-teal p-2 rounded-xl text-white">
-                            <SlidersHorizontal size={16} />
-                        </div>
-                        <span className="text-sm font-bold text-white">Quick Controls</span>
-                    </div>
+                <AccordionItem
+                    title="Quick Controls"
+                    icon={SlidersHorizontal}
+                    isOpen={activeSection === 'quick-controls'}
+                    onToggle={() => toggleSection('quick-controls')}
+                >
 
                     {/* Outgoings Slider */}
                     <div className="mb-3">
                         <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-medium text-white/60">Annual Spending</span>
+                            <span className="flex items-center gap-1 text-xs font-medium text-white/60">
+                                Annual Spending
+                                <Tooltip text="Your annual spending in today's money, excluding housing. We account for inflation and optional spending tapering in old age." variant="dark" />
+                            </span>
                             <span className="text-xs font-bold text-white">£{displaySpending?.toLocaleString()}</span>
                         </div>
                         <DebouncedSlider
@@ -473,7 +507,10 @@ const App: React.FC = () => {
                     {/* Retirement Age Slider */}
                     <div className="mb-3">
                         <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-medium text-white/60">Retirement Age</span>
+                            <span className="flex items-center gap-1 text-xs font-medium text-white/60">
+                                Retirement Age
+                                <Tooltip text="The age you stop full-time work. You can add additional income sources after this age if you plan to work part-time or have other income in retirement." variant="dark" />
+                            </span>
                             <span className="text-xs font-bold text-white">{displayRetirement}</span>
                         </div>
                         <DebouncedSlider
@@ -486,10 +523,32 @@ const App: React.FC = () => {
                         />
                     </div>
 
-                    {/* Pension Fees Slider */}
+                    {/* Pension Yield Slider */}
                     <div className="mb-3">
                         <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-medium text-white/60">Pension Fees</span>
+                            <span className="flex items-center gap-1 text-xs font-medium text-white/60">
+                                Pension Growth
+                                <Tooltip text="Expected annual investment growth before fees. Global equity funds historically average 7-10%. This is applied to all your pension investments." variant="dark" />
+                            </span>
+                            <span className="text-xs font-bold text-white">{displayPensionGrowth}%</span>
+                        </div>
+                        <DebouncedSlider
+                            min={0}
+                            max={12}
+                            step={0.25}
+                            value={inputs.growthPension}
+                            onDrag={setDisplayPensionGrowth}
+                            onChange={(v) => updateInput('growthPension', v)}
+                        />
+                    </div>
+
+                    {/* Pension Fees Slider */}
+                    <div className="mb-2">
+                        <div className="flex justify-between items-center mb-1">
+                            <span className="flex items-center gap-1 text-xs font-medium text-white/60">
+                                Pension Fees
+                                <Tooltip text="The annual fee your pension provider charges. This is deducted from your investment growth each year. High fees significantly reduce your final pot over time." variant="dark" />
+                            </span>
                             <span className="text-xs font-bold text-white">{inputs.pensionFees || 0}%</span>
                         </div>
                         <DebouncedSlider
@@ -509,15 +568,18 @@ const App: React.FC = () => {
                             // Threshold: Show if opportunity cost > £10k (material impact)
                             if (totalOpportunityCost > 10000) {
                                 return (
-                                    <div className="mt-2 p-3 bg-red-400/20 border border-red-500/50 rounded-lg animate-in fade-in slide-in-from-top-2">
-                                        <div className="text-[10px] text-red-200 uppercase font-bold mb-1 flex items-center gap-1">
+                                    <div className="mt-4 animate-in fade-in slide-in-from-top-2">
+                                        <div className="text-[10px] text-red-300 uppercase font-bold mb-1 flex items-center gap-1">
                                             <AlertTriangle size={12} className="text-red-400" />
                                             Fee Warning
                                         </div>
-                                        <div className="text-xs text-white mb-2 leading-relaxed">
-                                            If you used a cheaper broker, the compound effect of these fees would be <span className="font-bold text-red-300">{formatLargeMoney(totalOpportunityCost)}</span> over duration of this plan.
+                                        <div className="text-xs text-slate-200 mb-2 leading-relaxed">
+                                            If you used a cheaper broker, the compound effect of these fees would be <span className="font-bold text-red-300">{formatLargeMoney(totalOpportunityCost)}</span> over the duration of this plan.
                                         </div>
-                                        <button className="w-full py-1.5 bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold rounded transition shadow-sm hover:shadow-md">
+                                        <button
+                                            onClick={() => setShowBrokerComparison(true)}
+                                            className="w-full py-1.5 bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold rounded transition shadow-sm hover:shadow-md"
+                                        >
                                             Compare Platforms
                                         </button>
                                     </div>
@@ -526,23 +588,7 @@ const App: React.FC = () => {
                             return null;
                         })()}
                     </div>
-
-                    {/* Pension Yield Slider */}
-                    <div className="mb-2">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-medium text-white/60">Pension Growth</span>
-                            <span className="text-xs font-bold text-white">{displayPensionGrowth}%</span>
-                        </div>
-                        <DebouncedSlider
-                            min={0}
-                            max={12}
-                            step={0.25}
-                            value={inputs.growthPension}
-                            onDrag={setDisplayPensionGrowth}
-                            onChange={(v) => updateInput('growthPension', v)}
-                        />
-                    </div>
-                </div>
+                </AccordionItem>
 
                 {/* PILLAR 1: INCOME */}
                 <AccordionItem
@@ -555,7 +601,6 @@ const App: React.FC = () => {
                         {/* Salary */}
                         <SmartInput
                             label="Main Income"
-                            subLabel={inputs.isSalaryGross ? "Annual gross income" : "Annual net income"}
                             value={inputs.currentSalary}
                             onChange={(v) => updateInput('currentSalary', v)}
                             min={0}
@@ -566,6 +611,8 @@ const App: React.FC = () => {
                             rightValue={inputs.salaryGrowth ?? 0}
                             onRightChange={(v) => updateInput('salaryGrowth', v)}
                             colorClass="blue"
+                            tooltip="Your primary employment income. Use Gross if you receive salary sacrifice benefits, otherwise use Net (take-home pay)."
+                            rightTooltip="Expected annual salary increase or decrease. Can be negative if you expect income to reduce over time."
                         >
                             <div className="flex items-center justify-between">
                                 <p className="text-xs text-slate-400">Stop work at {inputs.retirementAge}</p>
@@ -586,69 +633,127 @@ const App: React.FC = () => {
                             </div>
                         </SmartInput>
 
-                        {/* Dividend Income */}
-                        <SmartInput
-                            label="Dividend Income"
-                            subLabel="Directors / Business owners"
-                            value={inputs.dividendIncome || 0}
-                            onChange={(v) => updateInput('dividendIncome', v)}
-                            min={0}
-                            max={100000}
-                            step={1000}
-                            prefix="£"
-                            colorClass="purple"
-                        >
-                            <p className="text-xs text-slate-400">Taxed at dividend rates</p>
-                        </SmartInput>
-
                         {/* Additional Income / Semi-Retirement */}
-                        <div className="glass-card p-4 rounded-xl card-hover">
-                            <div className="flex justify-between items-center">
+                        <div className="glass-card p-4 rounded-xl card-hover relative group">
+                            <div className="flex justify-between items-center mb-2">
                                 <div>
                                     <div className="font-bold text-sm text-slate-800">Additional Income</div>
                                     <div className="text-xs text-slate-400">Side hustles, consulting, etc</div>
                                 </div>
-                                <div className="text-right">
-                                    {(inputs.additionalIncomes && inputs.additionalIncomes.length > 0) ? (
-                                        <div className="font-extrabold text-lg text-emerald-600 number-display">
-                                            £{inputs.additionalIncomes.reduce((acc, i) => acc + i.amount, 0).toLocaleString()}
-                                        </div>
-                                    ) : (
-                                        <div className="font-bold text-lg text-slate-300">£0</div>
-                                    )}
-                                </div>
+                                <button
+                                    onClick={() => {
+                                        setAdditionalIncomeToEdit(null);
+                                        setAdditionalIncomeModalOpen(true);
+                                    }}
+                                    className="text-xs text-emerald-600 font-bold hover:underline"
+                                >
+                                    + Add Item
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setAdditionalIncomeModalOpen(true)}
-                                className="w-full mt-3 text-xs text-white font-semibold btn-primary py-2 rounded-xl"
-                            >
-                                {inputs.additionalIncomes?.length > 0 ? 'Manage Incomes' : '+ Add Additional Income'}
-                            </button>
+
+                            <div className="space-y-2 mt-3">
+                                {inputs.additionalIncomes && inputs.additionalIncomes.map(inc => (
+                                    <div
+                                        key={inc.id}
+                                        onClick={() => {
+                                            setAdditionalIncomeToEdit(inc);
+                                            setAdditionalIncomeModalOpen(true);
+                                        }}
+                                        className="flex items-center justify-between p-2 rounded-lg hover:bg-emerald-50 cursor-pointer border border-transparent hover:border-emerald-100 transition group/item"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="icon-badge-teal p-1.5 rounded-lg text-white">
+                                                <TrendingUp size={12} />
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-xs text-slate-700">{inc.name}</div>
+                                                <div className="text-[10px] text-slate-400">
+                                                    Age {inc.startAge}-{inc.endAge}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="font-bold text-sm text-emerald-600">£{inc.amount.toLocaleString()}</div>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const updated = inputs.additionalIncomes?.filter(i => i.id !== inc.id) || [];
+                                                    updateInput('additionalIncomes', updated);
+                                                }}
+                                                className="opacity-0 group-hover/item:opacity-100 text-slate-400 hover:text-red-500 transition"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {(!inputs.additionalIncomes || inputs.additionalIncomes.length === 0) && (
+                                    <div className="text-center py-2 text-xs text-slate-300 italic">No additional income streams</div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Rental Income */}
-                        <div className="glass-card p-4 rounded-xl card-hover">
-                            <div className="flex justify-between items-center">
+                        <div className="glass-card p-4 rounded-xl card-hover relative group">
+                            <div className="flex justify-between items-center mb-2">
                                 <div>
                                     <div className="font-bold text-sm text-slate-800">Rental Income</div>
                                     <div className="text-[10px] text-slate-500">From investment properties</div>
                                 </div>
-                                <div className="text-right">
-                                    {inputs.investmentProperties && inputs.investmentProperties.length > 0 ? (
-                                        <div className="font-extrabold text-lg text-emerald-600 number-display">
-                                            £{(inputs.investmentProperties.reduce((acc, p) => acc + (p.monthlyRent * 12), 0)).toLocaleString()}
-                                        </div>
-                                    ) : (
-                                        <div className="font-bold text-lg text-slate-300">£0</div>
-                                    )}
-                                </div>
+                                <button
+                                    onClick={() => {
+                                        setPropertyToEdit(null);
+                                        setPropertyModalOpen(true);
+                                    }}
+                                    className="text-xs text-blue-600 font-bold hover:underline"
+                                >
+                                    + Add Property
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setPropertyModalOpen(true)}
-                                className="w-full mt-3 text-xs text-white font-semibold btn-success py-2 rounded-xl"
-                            >
-                                {inputs.investmentProperties?.length > 0 ? 'Manage Properties' : '+ Add Rental Property'}
-                            </button>
+
+                            <div className="space-y-2 mt-3">
+                                {inputs.investmentProperties && inputs.investmentProperties.map(p => (
+                                    <div
+                                        key={p.id}
+                                        onClick={() => {
+                                            setPropertyToEdit(p);
+                                            setPropertyModalOpen(true);
+                                        }}
+                                        className="flex items-center justify-between p-2 rounded-lg hover:bg-blue-50 cursor-pointer border border-transparent hover:border-blue-100 transition group/item"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-blue-100 p-1.5 rounded-lg text-blue-600">
+                                                <Building size={12} />
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-xs text-slate-700">{p.name}</div>
+                                                <div className="text-[10px] text-slate-400">
+                                                    Val: £{(p.value / 1000).toFixed(0)}k | Rent: £{p.monthlyRent}/mo
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="font-bold text-sm text-blue-600">
+                                                £{((p.monthlyRent - p.monthlyCost) * 12).toLocaleString()}
+                                                <span className="text-[9px] text-slate-400 font-normal ml-0.5">/yr</span>
+                                            </div>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const updated = inputs.investmentProperties?.filter(x => x.id !== p.id) || [];
+                                                    updateInput('investmentProperties', updated);
+                                                }}
+                                                className="opacity-0 group-hover/item:opacity-100 text-slate-400 hover:text-red-500 transition"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {(!inputs.investmentProperties || inputs.investmentProperties.length === 0) && (
+                                    <div className="text-center py-2 text-xs text-slate-300 italic">No investment properties</div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Pension Drawdown - only show if over 57 */}
@@ -674,31 +779,12 @@ const App: React.FC = () => {
                                 </div>
                             </div>
                         )}
-
-                        {/* DB Pensions Summary */}
-                        {inputs.dbPensions && inputs.dbPensions.length > 0 && (
-                            <div className="glass-card p-4 rounded-xl card-hover">
-                                <div className="flex justify-between items-center">
-                                    <div>
-                                        <div className="font-bold text-sm text-slate-800">Final Salary Pensions</div>
-                                        <div className="text-[10px] text-slate-500">{inputs.dbPensions.length} pension(s) configured</div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="font-extrabold text-lg text-emerald-600 number-display">
-                                            £{inputs.dbPensions.reduce((acc, db) => acc + db.annualIncome, 0).toLocaleString()}
-                                        </div>
-                                        <div className="text-[10px] text-slate-500">per year</div>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => setDBPensionModalOpen(true)}
-                                    className="w-full mt-3 text-xs text-white font-semibold btn-primary py-2 rounded-xl"
-                                >
-                                    Manage DB Pensions
-                                </button>
-                            </div>
-                        )}
                     </div>
+
+                    {/* Guidance Note */}
+                    <p className="text-[10px] text-slate-400 italic mt-4 text-center">
+                        One-off income such as property sales or inheritance can be added in the Lifestyle Events section.
+                    </p>
                 </AccordionItem>
 
                 {/* PILLAR 2: PENSIONS & RETIREMENT */}
@@ -708,40 +794,79 @@ const App: React.FC = () => {
                     isOpen={activeSection === 'pension'}
                     onToggle={() => toggleSection('pension')}
                 >
-                    <SliderInput
-                        label="Access Private Pension Age"
-                        min={55} max={65}
-                        value={inputs.pensionAccessAge}
-                        onChange={v => updateInput('pensionAccessAge', v)}
-                    />
-
-                    {/* State Pension */}
-                    <div className="glass-card p-4 rounded-xl card-hover mb-4">
+                    {/* State Pension (UK) */}
+                    <div className="glass-card p-3 rounded-xl card-hover mb-4">
                         <div className="flex justify-between items-center mb-2">
-                            <span className="text-xs font-bold text-slate-700 uppercase">State Pension</span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-[10px] text-slate-400">Full Amount?</span>
-                                <input type="checkbox" checked={paysFullNI} onChange={e => {
-                                    setPaysFullNI(e.target.checked);
-                                    if (e.target.checked) updateInput('statePension', FULL_STATE_PENSION);
-                                }} className="rounded text-blue-600" title="Full NI Contribution" />
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-slate-700 uppercase">State Pension</span>
+                                <Tooltip text="UK State Pension based on your National Insurance record. You need 35 qualifying years for the full amount. Check your NI record on gov.uk to see your forecast." />
+                                <a
+                                    href="https://www.gov.uk/check-state-pension"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[10px] text-teal-600 hover:underline flex items-center gap-0.5"
+                                >
+                                    Check NI Record <ArrowUpRight size={10} />
+                                </a>
                             </div>
                         </div>
-                        {!paysFullNI ? (
-                            <SmartInput
-                                label="Expected Amount"
-                                value={inputs.statePension}
-                                onChange={(v) => updateInput('statePension', v)}
-                                min={0} max={15000} step={500}
-                                prefix="£"
+
+                        <label className="flex items-center gap-2 cursor-pointer mb-2">
+                            <input
+                                type="checkbox"
+                                checked={(inputs.missingNIYears || 0) === 0}
+                                onChange={e => {
+                                    if (e.target.checked) {
+                                        updateInput('missingNIYears', 0);
+                                        updateInput('statePension', FULL_STATE_PENSION);
+                                    } else {
+                                        // Default to 1 year missing
+                                        const newYears = 1;
+                                        updateInput('missingNIYears', newYears);
+                                        const newPension = Math.round(FULL_STATE_PENSION * ((35 - newYears) / 35));
+                                        updateInput('statePension', newPension);
+                                    }
+                                }}
+                                className="rounded text-teal-600 focus:ring-teal-500 w-4 h-4 border-slate-300"
                             />
-                        ) : (
-                            <div className="text-xs text-slate-500 italic">Assuming full amount (~£11.5k/yr) from age {inputs.statePensionAge}</div>
+                            <span className="text-xs font-bold text-slate-700">Max. National Insurance contributions (35 years)</span>
+                        </label>
+
+                        {(inputs.missingNIYears || 0) > 0 && (
+                            <div className="mt-2 pl-6 animate-slide-down">
+                                <SliderInput
+                                    label="Missing NI Years"
+                                    min={1} max={35}
+                                    value={inputs.missingNIYears || 0}
+                                    onChange={(v) => {
+                                        const years = Math.round(v);
+                                        const ratio = Math.max(0, (35 - years) / 35);
+                                        updateInput('missingNIYears', years);
+                                        updateInput('statePension', Math.round(FULL_STATE_PENSION * ratio));
+                                    }}
+                                />
+                                <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1.5">
+                                    <AlertTriangle size={12} className="text-amber-500" />
+                                    <span>
+                                        {(Math.max(0, (35 - (inputs.missingNIYears || 0)) / 35) * 100).toFixed(0)}% of full pension ({inputs.missingNIYears} years missing)
+                                    </span>
+                                </div>
+                            </div>
                         )}
                     </div>
 
+                    <div className="mb-4 pt-4 border-t border-white/10">
+                        <SliderInput
+                            label="Access Private Pension Age"
+                            min={55} max={65}
+                            value={inputs.pensionAccessAge}
+                            onChange={v => updateInput('pensionAccessAge', v)}
+                            tooltip="The earliest age you can access your private pension. Currently 55, rising to 57 in 2028."
+                        />
+                    </div>
+
                     {/* Private Pension Pots */}
-                    <div className="mt-4 pt-4 border-t border-white/10">
+                    <div className="mt-4">
                         <p className="text-[10px] text-slate-500 font-bold uppercase mb-3">Pension Pots</p>
 
                         <div className="mb-4">
@@ -778,45 +903,159 @@ const App: React.FC = () => {
                             type="pension"
                             colorClass="orange" // Distinguish visual
                         />
+                        <p className="text-[9px] text-slate-400 mt-3">
+                            Enter what you pay. Basic rate tax relief (25% gross-up) is added automatically.
+                        </p>
                     </div>
 
                     {/* Defined Benefit Pensions */}
-                    <div className="mt-4 pt-4 border-t border-white/10">
+                    <div className="glass-card p-4 rounded-xl card-hover relative group mt-4">
                         <div className="flex justify-between items-center mb-2">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Final Salary (DB)</span>
+                            <div>
+                                <div className="font-bold text-sm text-slate-800">Defined Benefit Pensions</div>
+                                <div className="text-[10px] text-slate-500">Final Salary / Career Average</div>
+                            </div>
                             <button
-                                onClick={() => setDBPensionModalOpen(true)}
-                                className="text-xs text-blue-600 font-medium hover:underline"
+                                onClick={() => {
+                                    setDBPensionToEdit(null);
+                                    setDBPensionModalOpen(true);
+                                }}
+                                className="text-xs text-blue-600 font-bold hover:underline"
                             >
-                                {inputs.dbPensions.length > 0 ? 'Manage DB Pensions' : '+ Add DB Pension'}
+                                + Add Pension
                             </button>
                         </div>
 
-                        {inputs.dbPensions.length > 0 ? (
-                            <div className="space-y-2 mb-2">
-                                {inputs.dbPensions.map(db => (
-                                    <div key={db.id} className="glass-card p-3 rounded-xl flex justify-between items-center text-xs card-hover">
-                                        <div className="flex items-center gap-2">
-                                            <div className="icon-badge-green p-1.5 rounded-xl text-white">
-                                                <ShieldCheck size={12} />
-                                            </div>
-                                            <span className="font-semibold text-slate-700">{db.name}</span>
+                        <div className="space-y-2 mt-3">
+                            {inputs.dbPensions && inputs.dbPensions.map(p => (
+                                <div
+                                    key={p.id}
+                                    onClick={() => {
+                                        setDBPensionToEdit(p);
+                                        setDBPensionModalOpen(true);
+                                    }}
+                                    className="flex items-center justify-between p-2 rounded-lg hover:bg-blue-50 cursor-pointer border border-transparent hover:border-blue-100 transition group/item"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-green-100 p-1.5 rounded-lg text-green-700">
+                                            <ShieldCheck size={12} />
                                         </div>
-                                        <div className="font-mono text-emerald-600 font-bold">+£{(db.annualIncome / 1000).toFixed(1)}k/yr</div>
+                                        <div>
+                                            <div className="font-bold text-xs text-slate-700">{p.name}</div>
+                                            <div className="text-[10px] text-slate-400">
+                                                Starts Age {p.startAge} {p.inflationLinked && '• Index Linked'}
+                                            </div>
+                                        </div>
                                     </div>
-                                ))}
+                                    <div className="flex items-center gap-3">
+                                        <div className="font-bold text-sm text-green-700">
+                                            £{p.annualIncome.toLocaleString()}
+                                            <span className="text-[9px] text-slate-400 font-normal ml-0.5">/yr</span>
+                                        </div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const updated = inputs.dbPensions?.filter(x => x.id !== p.id) || [];
+                                                updateInput('dbPensions', updated);
+                                            }}
+                                            className="opacity-0 group-hover/item:opacity-100 text-slate-400 hover:text-red-500 transition"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {(!inputs.dbPensions || inputs.dbPensions.length === 0) && (
+                                <div className="text-center py-2 text-xs text-slate-300 italic">No DB pensions added</div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Spending Tapering in Retirement */}
+                    <div className="glass-card p-4 rounded-xl card-hover mt-4">
+                        <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-1">
+                                <span className="font-bold text-sm text-slate-800">Spending Tapering</span>
+                                <Tooltip text="Typically retirees spend less as they get older. At what age do you expect your spending to taper?" />
                             </div>
-                        ) : (
-                            <div className="text-xs text-slate-400 italic">No Final Salary pensions</div>
+                            <div className="bg-amber-50 text-amber-700 text-[9px] font-bold px-2 py-1 rounded-full border border-amber-200">
+                                Optional
+                            </div>
+                        </div>
+
+                        <div className="space-y-4 mt-4">
+                            <div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-xs font-medium text-slate-600">Start Tapering at Age</span>
+                                    <span className="text-sm font-bold text-slate-800">{inputs.spendingTaperAge}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min={60}
+                                    max={90}
+                                    step={1}
+                                    value={inputs.spendingTaperAge}
+                                    onChange={(e) => updateInput('spendingTaperAge', Number(e.target.value))}
+                                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                />
+                                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                                    <span>60</span>
+                                    <span>90</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-xs font-medium text-slate-600">Annual Reduction Rate</span>
+                                    <span className="text-sm font-bold text-slate-800">{inputs.spendingTaperRate}%</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={5}
+                                    step={0.5}
+                                    value={inputs.spendingTaperRate}
+                                    onChange={(e) => updateInput('spendingTaperRate', Number(e.target.value))}
+                                    className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                />
+                                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                                    <span>0%</span>
+                                    <span>5%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {inputs.spendingTaperRate > 0 && (
+                            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                <p className="text-xs text-blue-700">
+                                    <span className="font-bold">Effect:</span> Your spending will reduce by {inputs.spendingTaperRate}% per year after age {inputs.spendingTaperAge}.
+                                    {(() => {
+                                        const yearsOfTaper = inputs.lifeExpectancy - inputs.spendingTaperAge;
+                                        if (yearsOfTaper > 0) {
+                                            const finalMultiplier = Math.pow(1 - inputs.spendingTaperRate / 100, yearsOfTaper);
+                                            const finalSpending = Math.round(inputs.annualSpending * finalMultiplier);
+                                            return ` By age ${inputs.lifeExpectancy}, spending would be ~£${finalSpending.toLocaleString()}/yr.`;
+                                        }
+                                        return '';
+                                    })()}
+                                </p>
+                            </div>
                         )}
+
+                        <div className="mt-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                            <p className="text-[10px] text-slate-500 italic">
+                                <strong>Tip:</strong> If you wish to account for care or medical expenses, add them as events in the Spending section.
+                            </p>
+                        </div>
                     </div>
                 </AccordionItem>
 
                 {/* PILLAR 3: SAVINGS & DEBTS */}
-                <AccordionItem
+                < AccordionItem
                     title="Your Savings"
                     icon={Wallet}
-                    isOpen={activeSection === 'assets'}
+                    isOpen={activeSection === 'assets'
+                    }
                     onToggle={() => toggleSection('assets')}
                 >
                     <div className="space-y-2">
@@ -864,7 +1103,7 @@ const App: React.FC = () => {
                     {/* Fixed Assets (Properties) */}
                     <div className="mt-6 pt-4 border-t border-white/10">
                         <div className="flex justify-between items-center mb-3">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase">Fixed Assets</span>
+                            <span className="text-[10px] font-bold text-slate-500 uppercase">Investment Property</span>
                             <button
                                 onClick={() => setPropertyModalOpen(true)}
                                 className="text-xs text-blue-600 font-medium hover:underline"
@@ -897,7 +1136,10 @@ const App: React.FC = () => {
                         <div className="flex justify-between items-center mb-3">
                             <span className="text-[10px] font-bold text-slate-500 uppercase">Liabilities (Debt)</span>
                             <button
-                                onClick={() => setDebtModalOpen(true)}
+                                onClick={() => {
+                                    setLoanToEdit(null);
+                                    setDebtModalOpen(true);
+                                }}
                                 className="text-xs text-blue-600 font-medium hover:underline"
                             >
                                 {inputs.loans.length > 0 ? 'Manage Debts' : '+ Add Debt'}
@@ -917,14 +1159,34 @@ const App: React.FC = () => {
                                 </div>
                             )}
                             {inputs.loans.map(l => (
-                                <div key={l.id} className="glass-card p-3 rounded-xl flex justify-between items-center text-xs card-hover border-l-4 border-l-red-400">
+                                <div
+                                    key={l.id}
+                                    onClick={() => {
+                                        setLoanToEdit(l);
+                                        setDebtModalOpen(true);
+                                    }}
+                                    className="glass-card p-3 rounded-xl flex justify-between items-center text-xs card-hover border-l-4 border-l-red-400 cursor-pointer group"
+                                >
                                     <div className="flex items-center gap-2">
                                         <div className="icon-badge-rose p-1.5 rounded-xl text-white">
                                             <CreditCard size={12} />
                                         </div>
                                         <span className="font-semibold text-slate-700">{l.name}</span>
                                     </div>
-                                    <div className="font-mono text-red-500 font-bold">-£{(l.balance / 1000).toFixed(1)}k</div>
+                                    <div className="flex items-center gap-2">
+                                        <div className="font-mono text-red-500 font-bold">-£{(l.balance / 1000).toFixed(1)}k</div>
+                                        <button
+                                            onClick={(evt) => {
+                                                evt.stopPropagation();
+                                                const updated = inputs.loans.filter(loan => loan.id !== l.id);
+                                                updateInput('loans', updated);
+                                            }}
+                                            className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                                            title="Delete debt"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                             {inputs.loans.length === 0 && inputs.housingMode !== 'mortgage' && (
@@ -942,74 +1204,100 @@ const App: React.FC = () => {
                     onToggle={() => toggleSection('spending')}
                 >
 
-                    {/* Housing Costs */}
-                    <div className="glass-card p-4 rounded-xl card-hover mb-4">
-                        <div className="flex justify-between items-center mb-3">
-                            <div className="flex items-center gap-2">
-                                <div className={`${inputs.housingMode === 'mortgage' ? 'icon-badge-amber' : 'icon-badge-teal'} p-2 rounded-xl text-white`}>
-                                    {inputs.housingMode === 'mortgage' ? <Building size={14} /> : <Key size={14} />}
-                                </div>
-                                <span className="text-xs font-bold text-slate-700 uppercase">Housing Cost</span>
-                            </div>
-                            <div className="flex bg-slate-100 rounded-xl p-0.5 border border-slate-200">
+                    <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500 delay-300">
+
+
+                        {/* Housing Mode Switch */}
+                        <div className="glass-card p-4 rounded-xl card-hover relative group mb-4">
+                            <div className="flex justify-center gap-4 mb-4 bg-white/50 p-1 rounded-lg border border-slate-100 shadow-sm relative z-10">
                                 <button
                                     onClick={() => updateInput('housingMode', 'mortgage')}
-                                    className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${inputs.housingMode === 'mortgage' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                    className={`flex-1 py-1.5 px-4 rounded font-bold text-xs transition ${inputs.housingMode === 'mortgage' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                 >
-                                    Mortgage
+                                    Own / Mortgage
                                 </button>
                                 <button
                                     onClick={() => updateInput('housingMode', 'rent')}
-                                    className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${inputs.housingMode === 'rent' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                    className={`flex-1 py-1.5 px-4 rounded font-bold text-xs transition ${inputs.housingMode === 'rent' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                                 >
                                     Rent
                                 </button>
                             </div>
-                        </div>
 
-                        {
-                            inputs.housingMode === 'mortgage' ? (
-                                <div className="space-y-2">
-                                    <div className="bg-white/60 rounded-xl p-3 border border-slate-100">
-                                        <div className="flex justify-between items-center mb-3">
-                                            <div>
-                                                <div className="text-sm font-bold text-slate-800">Mortgages</div>
-                                                <div className="text-[10px] text-slate-500">
-                                                    {inputs.mortgages?.length || 0} active mortgage(s)
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className="text-sm font-bold text-red-500">
-                                                    -£{(inputs.mortgages?.reduce((acc, m) => acc + m.monthlyPayment, 0) || 0).toLocaleString()}
-                                                </div>
-                                                <div className="text-[10px] text-slate-400">/mo</div>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => setMortgageModalOpen(true)}
-                                            className="w-full text-xs btn-primary py-2 rounded-xl font-semibold"
-                                        >
-                                            {inputs.mortgages && inputs.mortgages.length > 0 ? 'Manage Mortgages' : '+ Add Mortgage'}
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
+                            {inputs.housingMode === 'rent' ? (
+                                <div className="animate-in fade-in">
                                     <SmartInput
                                         label="Monthly Rent"
                                         value={inputs.rentAmount || 1500}
                                         onChange={v => updateInput('rentAmount', v)}
-                                        min={0}
-                                        max={5000}
-                                        step={50}
-                                        prefix="£"
+                                        min={0} max={5000} step={50} prefix="£"
                                         rightLabel="Inflation"
                                         rightValue={inputs.rentInflation || 3}
                                         onRightChange={v => updateInput('rentInflation', v)}
+                                        tooltip="Your current monthly rent payment. This will be adjusted for inflation over time."
+                                        rightTooltip="Expected annual rent increase. UK average is typically 2-4% per year."
                                     />
-                                </>
-                            )
-                        }
+                                </div>
+                            ) : (
+                                <div className="animate-in fade-in space-y-3">
+                                    {/* Header / Add Button */}
+                                    <div className="flex justify-between items-center mb-1">
+                                        <div className="text-[10px] uppercase font-bold text-slate-400">Mortgages</div>
+                                        <button
+                                            onClick={() => {
+                                                setMortgageToEdit(null);
+                                                setMortgageModalOpen(true);
+                                            }}
+                                            className="text-xs text-blue-600 font-bold hover:underline"
+                                        >
+                                            + Add Mortgage
+                                        </button>
+                                    </div>
+
+                                    {/* Mortgage List - Clickable */}
+                                    <div className="space-y-2">
+                                        {inputs.mortgages && inputs.mortgages.map(m => (
+                                            <div
+                                                key={m.id}
+                                                onClick={() => {
+                                                    setMortgageToEdit(m);
+                                                    setMortgageModalOpen(true);
+                                                }}
+                                                className="bg-white border-l-4 border-blue-500 rounded-lg p-3 shadow-sm flex justify-between items-center text-xs cursor-pointer hover:bg-blue-50 transition group/item"
+                                            >
+                                                <div className="flex-1">
+                                                    <div className="font-bold text-slate-800">{m.name}</div>
+                                                    <div className="text-slate-500 mt-1 flex gap-3">
+                                                        <span>Ends Age: <strong className="text-slate-700">{m.endAge}</strong></span>
+                                                        <span>Bal: <strong className="text-slate-700">£{(m.balance / 1000).toFixed(0)}k</strong></span>
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-400 mt-0.5 capitalize">{m.type ? m.type.replace('_', ' ') : 'repayment'} Mortgage</div>
+                                                </div>
+                                                <div className="flex items-center gap-3 pl-3 border-l border-slate-100 ml-3">
+                                                    <div className="text-right">
+                                                        <div className="font-bold text-slate-800">£{m.monthlyPayment.toLocaleString()}</div>
+                                                        <div className="text-[10px] text-slate-400">/mo</div>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            const updated = inputs.mortgages?.filter(x => x.id !== m.id) || [];
+                                                            updateInput('mortgages', updated);
+                                                        }}
+                                                        className="opacity-0 group-hover/item:opacity-100 text-slate-400 hover:text-red-500 transition"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {(!inputs.mortgages || inputs.mortgages.length === 0) && (
+                                            <div className="text-center py-2 text-xs text-slate-300 italic">No mortgages added</div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <SmartInput
@@ -1021,26 +1309,76 @@ const App: React.FC = () => {
                         max={100000}
                         step={500}
                         prefix="£"
+                        tooltip="Your annual spending in today's money, excluding housing costs. We automatically account for inflation and optional tapering in old age."
                     >
                         <p className="text-[10px] text-slate-500">General spending in today's money.</p>
                     </SmartInput>
 
                     {/* Timeline of Events */}
                     <div className="flex justify-between items-center mb-3 mt-6 pt-4 border-t border-white/10">
-                        <span className="text-xs font-bold text-slate-500 uppercase">Timeline of Events</span>
+                        <label className="text-xs font-bold text-slate-500 uppercase">
+                            Major Life Events / Windfalls
+                        </label>
                         <button
-                            onClick={() => setEventModalOpen(true)}
+                            onClick={() => {
+                                setEventToEdit(null); // Clear edit state
+                                setEventModalOpen(true);
+                            }}
                             className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1"
                         >
                             <Plus size={14} /> Add Event
                         </button>
                     </div>
 
+                    {/* Healthcare Event Suggestion */}
+                    {!inputs.events.some(e => e.name.toLowerCase().includes('health') || e.name.toLowerCase().includes('care') || e.name.toLowerCase().includes('medical')) && (
+                        <div className="mb-3 p-3 bg-rose-50 border border-rose-100 rounded-xl">
+                            <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-2">
+                                    <div className="bg-rose-100 p-1.5 rounded-lg text-rose-600 mt-0.5">
+                                        <AlertTriangle size={14} />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-rose-800">Plan for Healthcare Costs?</p>
+                                        <p className="text-[10px] text-rose-600 mt-0.5">
+                                            Consider adding future healthcare or care home costs.
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        const healthcareEvent: FinancialEvent = {
+                                            id: Math.random().toString(36).substr(2, 9),
+                                            name: 'Healthcare / Care Costs',
+                                            age: 80,
+                                            amount: 15000,
+                                            type: 'expense',
+                                            isRecurring: true,
+                                            endAge: inputs.lifeExpectancy,
+                                            taxType: 'tax_free'
+                                        };
+                                        updateInput('events', [...inputs.events, healthcareEvent]);
+                                    }}
+                                    className="text-[10px] font-bold text-rose-700 bg-white px-2 py-1 rounded-lg border border-rose-200 hover:bg-rose-100 transition whitespace-nowrap"
+                                >
+                                    + Add Healthcare
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {
                         inputs.events.length > 0 ? (
                             <div className="space-y-2">
                                 {inputs.events.map(e => (
-                                    <div key={e.id} className={`glass-card p-3 rounded-xl flex justify-between items-center text-xs card-hover group ${e.type === 'income' ? 'border-l-4 border-l-emerald-400' : 'border-l-4 border-l-red-400'}`}>
+                                    <div
+                                        key={e.id}
+                                        onClick={() => {
+                                            setEventToEdit(e);
+                                            setEventModalOpen(true);
+                                        }}
+                                        className={`glass-card p-3 rounded-xl flex justify-between items-center text-xs card-hover group cursor-pointer ${e.type === 'income' ? 'border-l-4 border-l-emerald-400' : 'border-l-4 border-l-red-400'}`}
+                                    >
                                         <div className="flex items-center gap-2">
                                             <div className={`${e.type === 'income' ? 'icon-badge-green' : 'icon-badge-rose'} p-1.5 rounded-xl text-white`}>
                                                 <Calendar size={12} />
@@ -1055,7 +1393,8 @@ const App: React.FC = () => {
                                                 {e.type === 'income' ? '+' : '-'}£{(e.amount / 1000).toFixed(1)}k
                                             </span>
                                             <button
-                                                onClick={() => {
+                                                onClick={(evt) => {
+                                                    evt.stopPropagation(); // Prevent opening modal
                                                     const updated = inputs.events.filter(ev => ev.id !== e.id);
                                                     updateInput('events', updated);
                                                 }}
@@ -1074,17 +1413,17 @@ const App: React.FC = () => {
                             </div>
                         )
                     }
-                </AccordionItem>
+                </AccordionItem >
 
                 {/* PILLAR 5: FINE-TUNING */}
-                <AccordionItem
-                    title="Growth & Strategy"
+                < AccordionItem
+                    title="Assumptions and Strategy"
                     icon={Settings}
                     isOpen={activeSection === 'config'}
                     onToggle={() => toggleSection('config')}
                 >
                     {/* Strategy Widget */}
-                    <div className="mb-6">
+                    < div className="mb-6" >
                         <label className="text-xs font-bold text-slate-500 uppercase mb-3 block">
                             Flow & Drawdown
                         </label>
@@ -1143,7 +1482,7 @@ const App: React.FC = () => {
                                 />
                             </label>
                         </div>
-                    </div>
+                    </div >
 
                     <SliderInput
                         label="Inflation Assumption"
@@ -1190,256 +1529,320 @@ const App: React.FC = () => {
         </>
     );
 
-    return (
-        <div className="flex flex-col md:flex-row h-screen w-full overflow-hidden">
+    // If showing broker comparison, render that instead of main app
+    if (showBrokerComparison) {
+        return (
+            <BrokerComparison
+                userInputs={inputs}
+                onBack={() => setShowBrokerComparison(false)}
+            />
+        );
+    }
 
-            {/* --- Mobile Header --- */}
-            <div className="md:hidden header-gradient p-4 flex flex-col gap-3 flex-shrink-0 z-20">
-                <div className="flex justify-between items-center">
-                    <h1 className="text-lg font-bold text-white flex items-center gap-3">
+    return (
+        <div className="flex flex-col h-screen w-full overflow-hidden bg-slate-900">
+
+            {/* --- Unified Desktop Header (Hidden on Mobile) --- */}
+            <header className="hidden md:flex flex-none h-[72px] border-b border-white/10 bg-slate-900 text-white z-20">
+                {/* Left: Logo Area (Matches Sidebar Width) */}
+                <div className="w-[420px] flex-none px-6 flex items-center border-r border-white/10 bg-slate-900">
+                    <h1 className="text-2xl font-extrabold text-white flex items-center gap-3">
                         <div className="w-9 h-9 bg-teal-500 rounded-xl flex items-center justify-center">
                             <Compass size={20} className="text-white" />
                         </div>
-                        <span className="text-white font-extrabold tracking-tight">RetirePlan</span>
+                        <span className="text-white tracking-tight">RetirePlan</span>
                     </h1>
-                    <button
-                        onClick={() => {
-                            setSettingsTab('plan');
-                            setSettingsOpen(true);
-                        }}
-                        className="btn-glass p-2.5 rounded-xl"
-                    >
-                        <Settings size={20} />
-                    </button>
+                    <p className="text-[10px] text-white/40 mt-1.5 ml-3 font-medium uppercase tracking-wider">v2.0</p>
                 </div>
-            </div>
 
-            {/* --- Mobile Impact Bar --- */}
-            {mobileTab === 'inputs' && (
-                <div className={`md:hidden px-4 py-3 flex items-center justify-between text-xs sticky top-0 z-10 shadow-lg backdrop-blur-lg ${fundsRunOutAge
-                    ? 'bg-red-600 text-white'
-                    : 'bg-teal-600 text-white'
-                    }`}>
-                    <div className="flex flex-col">
-                        <span className="opacity-80 text-[10px] font-medium uppercase tracking-wide">Projected Legacy</span>
-                        <span className="font-bold text-lg number-display">{formatLargeMoney(totalNetWorthEnd)}</span>
-                    </div>
-                    <div className="flex flex-col items-end">
-                        <span className="opacity-80 text-[10px] font-medium uppercase tracking-wide">Funds Last</span>
-                        <div className="font-bold text-lg flex items-center gap-2">
-                            {fundsRunOutAge ? (
-                                <>
-                                    <AlertTriangle size={16} className="text-yellow-300 animate-pulse" />
-                                    <span>Age {fundsRunOutAge}</span>
-                                </>
-                            ) : (
-                                <span className="flex items-center gap-1">
-                                    <ShieldCheck size={16} className="text-emerald-200" />
-                                    90+
-                                </span>
+                {/* Right: Global Actions & Status */}
+                <div className="flex-1 flex items-center justify-between px-6 bg-slate-900">
+                    <div className="flex items-center gap-6">
+                        <h2 className="text-xl font-bold text-white tracking-tight">Your Future</h2>
+
+                        {/* Scenario & Age Badge */}
+                        <div className="flex items-center gap-3 text-sm">
+                            <span className="bg-slate-800 text-slate-300 px-3 py-1 rounded-full text-xs font-medium border border-slate-700">
+                                Age {calculatedAge} → {inputs.lifeExpectancy}
+                            </span>
+                            <div className="h-4 w-px bg-slate-700"></div>
+
+                            <button
+                                onClick={() => {
+                                    setSettingsTab('scenarios');
+                                    setSettingsOpen(true);
+                                }}
+                                className="flex items-center gap-2 group"
+                            >
+                                <span className="text-slate-400 font-medium group-hover:text-white transition">{activeScenario.name}</span>
+                                <Pencil size={12} className="text-slate-600 group-hover:text-slate-400 transition" />
+                            </button>
+
+                            {scenarios.length === 1 && (
+                                <button
+                                    onClick={addScenario}
+                                    className="text-xs text-teal-400 hover:text-teal-300 font-medium hover:underline ml-1"
+                                >
+                                    + New
+                                </button>
                             )}
                         </div>
                     </div>
-                </div>
-            )}
 
-            {/* --- Sidebar (Inputs) --- */}
-            <div className={`
-        md:w-[420px] md:flex-shrink-0 md:flex md:flex-col md:relative md:h-full md:z-10
-        w-full h-full absolute inset-0 md:static overflow-hidden flex flex-col sidebar-gradient
-        ${mobileTab === 'inputs' ? 'z-10 flex' : 'hidden md:flex'}
-      `}>
-                {/* Desktop Header */}
-                <div className="hidden md:flex p-6 border-b border-white/10 justify-between items-center">
-                    <div>
-                        <h1 className="text-2xl font-extrabold text-white flex items-center gap-3">
-                            <div className="w-10 h-10 bg-teal-500 rounded-xl flex items-center justify-center">
-                                <Compass size={22} className="text-white" />
-                            </div>
-                            <span className="text-white tracking-tight">RetirePlan</span>
-                        </h1>
-                        <p className="text-xs text-white/50 mt-1.5 ml-[52px]">Your Financial Future, Visualized</p>
-                    </div>
-                    <button
-                        onClick={() => {
-                            setSettingsTab('plan');
-                            setSettingsOpen(true);
-                        }}
-                        className="btn-glass p-2.5 rounded-xl"
-                        title="Settings"
-                    >
-                        <Settings size={20} />
-                    </button>
-                </div>
-
-                {renderSidebarContent()}
-
-                {/* Desktop Disclaimer */}
-                <div className="hidden md:block p-4 bg-black/20 border-t border-white/10 text-[10px] text-white/40 leading-relaxed">
-                    Not financial advice. Calculations are approximations based on simplified assumptions.
-                </div>
-            </div>
-
-            {/* --- Main Dashboard (Right) --- */}
-            <div className={`
-        flex-1 flex flex-col h-full relative overflow-hidden main-panel
-        ${mobileTab === 'results' ? 'flex' : 'hidden md:flex'}
-      `}>
-
-
-
-                {/* Stats Header */}
-                <div className="glass-card border-b border-slate-100 p-4 md:p-6 flex flex-col md:flex-row md:items-start justify-between z-10 gap-4 md:gap-0">
-                    <div className="flex justify-between w-full md:w-auto md:block">
-                        <div>
-                            <h2 className="text-xl md:text-2xl font-extrabold text-slate-800 flex items-center gap-3">
-                                Your Future
-                                <span className="text-sm font-medium text-primary-600 bg-primary-50 px-3 py-1 rounded-full border border-primary-100">
-                                    Age {calculatedAge} → {inputs.lifeExpectancy}
-                                </span>
-                            </h2>
-
-                            <div className="flex items-center gap-2 text-sm text-slate-500 mt-2">
-                                <span className="font-semibold text-slate-700">{activeScenario.name}</span>
-                                <button
-                                    onClick={() => {
-                                        setSettingsTab('scenarios');
-                                        setSettingsOpen(true);
-                                    }}
-                                    className="text-slate-400 hover:text-primary-600 p-1.5 rounded-xl hover:bg-primary-50 transition"
-                                    title="Change Scenario"
-                                >
-                                    <Pencil size={14} />
-                                </button>
-                                {scenarios.length === 1 && (
-                                    <button
-                                        onClick={addScenario}
-                                        className="text-xs text-primary-600 font-semibold hover:underline ml-1"
-                                    >
-                                        + New Scenario
-                                    </button>
-                                )}
-                                <span className="text-slate-300">•</span>
-                                <span>Retire at <strong className="text-slate-700">{inputs.retirementAge}</strong></span>
-                            </div>
-                        </div>
-                        {/* Mobile Review Plan Button */}
-                        <button
-                            onClick={() => setReviewModalOpen(true)}
-                            className="md:hidden p-2.5 bg-teal-600 text-white rounded-xl"
-                        >
-                            <UserCheck size={20} />
-                        </button>
-                    </div>
-
-                    {/* New Status Dashboard */}
-                    <div className="w-full md:w-auto flex-1 md:max-w-xl">
+                    <div className="flex items-center gap-4">
+                        {/* Status Dashboard */}
                         <StatusBanner
                             results={deferredResults}
                             onReview={() => setReviewModalOpen(true)}
                             annualSpending={inputs.annualSpending}
+                            retirementAge={inputs.retirementAge}
                         />
-                    </div>
 
+                        {/* Global Actions */}
+                        <div className="flex items-center gap-1 pl-4 border-l border-white/10">
+                            <button
+                                onClick={() => {
+                                    setSettingsTab('data');
+                                    setSettingsOpen(true);
+                                }}
+                                className="p-2 text-slate-400 hover:text-white transition rounded-lg hover:bg-white/5"
+                                title="Import/Export"
+                            >
+                                <Save size={18} />
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setSettingsTab('plan');
+                                    setSettingsOpen(true);
+                                }}
+                                className="p-2 text-slate-400 hover:text-white transition rounded-lg hover:bg-white/5"
+                                title="Settings"
+                            >
+                                <Settings size={18} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            {/* --- Main Body Content --- */}
+            <div className="flex flex-1 overflow-hidden md:flex-row flex-col relative">
+
+                {/* --- Mobile Header (Hidden on Desktop) --- */}
+                <div className="md:hidden header-gradient p-4 flex flex-col gap-3 flex-shrink-0 z-20">
+                    <div className="flex justify-between items-center">
+                        <h1 className="text-lg font-bold text-white flex items-center gap-3">
+                            <div className="w-9 h-9 bg-teal-500 rounded-xl flex items-center justify-center">
+                                <Compass size={20} className="text-white" />
+                            </div>
+                            <span className="text-white font-extrabold tracking-tight">RetirePlan</span>
+                        </h1>
+                        <button
+                            onClick={() => {
+                                setSettingsTab('plan');
+                                setSettingsOpen(true);
+                            }}
+                            className="btn-glass p-2.5 rounded-xl"
+                        >
+                            <Settings size={20} />
+                        </button>
+                    </div>
                 </div>
 
-                {/* Chart View Config */}
-                <div className="px-4 md:px-6 pt-4 pb-2 flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-50 gap-3 md:gap-0">
-                    <div className="flex p-1.5 bg-white border border-slate-200 rounded-xl w-full md:w-auto">
-                        <button
-                            onClick={() => setChartMode('cashflow')}
-                            className={`flex-1 md:flex-none justify-center px-4 py-2 text-xs md:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all ${chartMode === 'cashflow' ? 'bg-teal-500 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
-                        >
-                            <BarChart2 size={16} /> Cash Flow
-                        </button>
-                        <button
-                            onClick={() => setChartMode('assets')}
-                            className={`flex-1 md:flex-none justify-center px-4 py-2 text-xs md:text-sm font-semibold rounded-lg flex items-center gap-2 transition-all ${chartMode === 'assets' ? 'bg-teal-500 text-white' : 'text-slate-600 hover:bg-slate-50'}`}
-                        >
-                            <LineChart size={16} /> Asset Value
-                        </button>
-                    </div>
-
-                    {chartMode === 'assets' && (
-                        <div className="w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
-                            <div className="flex items-center gap-3 bg-white px-3 py-1.5 border border-slate-200 rounded-xl shadow-sm whitespace-nowrap min-w-max">
-                                <button
-                                    onClick={() => setIsStacked(!isStacked)}
-                                    className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-medium text-slate-700 hover:bg-slate-100 transition shadow-sm mr-2"
-                                >
-                                    {isStacked ? <Layers size={14} className="text-blue-600" /> : <Activity size={14} className="text-blue-600" />}
-                                    {isStacked ? 'Stacked' : 'Lines'}
-                                </button>
-                                <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                                <span className="text-xs font-bold text-slate-400 uppercase mr-1">Show:</span>
-                                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700 select-none">
-                                    <input type="checkbox" checked={assetVisibility.total} onChange={() => toggleAssetVisibility('total')} className="rounded text-slate-800 focus:ring-slate-800" hidden={isStacked} />
-                                    <span className={isStacked ? "hidden" : "block"}>Total Wealth</span>
-                                </label>
-                                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-yellow-600 select-none">
-                                    <input type="checkbox" checked={assetVisibility.pension} onChange={() => toggleAssetVisibility('pension')} className="rounded text-yellow-600 focus:ring-yellow-600" />
-                                    Pension
-                                </label>
-                                <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-indigo-600 select-none">
-                                    <input type="checkbox" checked={assetVisibility.isa} onChange={() => toggleAssetVisibility('isa')} className="rounded text-indigo-600 focus:ring-indigo-600" />
-                                    ISA
-                                </label>
-                                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-emerald-600 select-none">
-                                    <input type="checkbox" checked={assetVisibility.gia} onChange={() => toggleAssetVisibility('gia')} className="rounded text-emerald-600 focus:ring-emerald-600" />
-                                    GIA
-                                </label>
-                                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-lime-600 select-none">
-                                    <input type="checkbox" checked={assetVisibility.cash} onChange={() => toggleAssetVisibility('cash')} className="rounded text-lime-600 focus:ring-lime-600" />
-                                    Cash
-                                </label>
+                {/* --- Mobile Impact Bar --- */}
+                {mobileTab === 'inputs' && (
+                    <div className={`md:hidden px-4 py-3 flex items-center justify-between text-xs sticky top-0 z-10 shadow-lg backdrop-blur-lg ${fundsRunOutAge
+                        ? 'bg-red-600 text-white'
+                        : 'bg-teal-600 text-white'
+                        }`}>
+                        <div className="flex flex-col">
+                            <span className="opacity-80 text-[10px] font-medium uppercase tracking-wide">Projected Legacy</span>
+                            <span className="font-bold text-lg number-display">{formatLargeMoney(totalNetWorthEnd)}</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                            <span className="opacity-80 text-[10px] font-medium uppercase tracking-wide">Funds Last</span>
+                            <div className="font-bold text-lg flex items-center gap-2">
+                                {fundsRunOutAge ? (
+                                    <>
+                                        <AlertTriangle size={16} className="text-yellow-300 animate-pulse" />
+                                        <span>Age {fundsRunOutAge}</span>
+                                    </>
+                                ) : (
+                                    <span className="flex items-center gap-1">
+                                        <ShieldCheck size={16} className="text-emerald-200" />
+                                        90+
+                                    </span>
+                                )}
                             </div>
                         </div>
-                    )}
+                    </div>
+                )}
+
+                {/* --- Sidebar (Inputs) --- */}
+                <div className={`
+                    md:w-[420px] md:flex-shrink-0 md:flex md:flex-col md:relative md:h-full md:z-10
+                    w-full h-full absolute inset-0 md:static overflow-hidden flex flex-col sidebar-gradient
+                    ${mobileTab === 'inputs' ? 'z-10 flex' : 'hidden md:flex'}
+                `}>
+
+                    {renderSidebarContent()}
+
+                    {/* Desktop Disclaimer */}
+                    <div className="hidden md:block p-4 bg-black/20 border-t border-white/10 text-[10px] text-white/40 leading-relaxed">
+                        Not financial advice. Calculations are approximations based on simplified assumptions.
+                    </div>
                 </div>
 
-                {/* Main Chart Area */}
-                <div className="flex-1 px-2 md:px-6 pb-20 md:pb-6 pt-2 flex flex-col min-h-0">
+                {/* --- Main Dashboard (Right) --- */}
+                <div className={`
+                    flex-1 flex flex-col h-full relative overflow-hidden main-panel
+                    ${mobileTab === 'results' ? 'flex' : 'hidden md:flex'}
+                `}>
 
-                    {/* Fee Warning Banner (>£100k) */}
-                    {(() => {
-                        const finalRes = deferredResults[deferredResults.length - 1];
-                        if (!finalRes || !finalRes.benchmarkPensionPot) return null;
-                        const totalOpportunityCost = finalRes.benchmarkPensionPot - finalRes.balancePension;
+                    {/* Navigation Tabs Row (No Header anymore) */}
+                    <div className="px-6 pt-4 pb-0 flex items-center justify-between bg-slate-50 border-b border-slate-200/50">
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => setChartMode('cashflow')}
+                                className={`px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition-all border-b-2 ${chartMode === 'cashflow'
+                                    ? 'text-teal-600 border-teal-600 bg-teal-50/50'
+                                    : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-100'
+                                    }`}
+                            >
+                                <BarChart2 size={16} /> Cash Flow
+                            </button>
+                            <button
+                                onClick={() => setChartMode('assets')}
+                                className={`px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition-all border-b-2 ${chartMode === 'assets'
+                                    ? 'text-teal-600 border-teal-600 bg-teal-50/50'
+                                    : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-100'
+                                    }`}
+                            >
+                                <LineChart size={16} /> Asset Value
+                            </button>
+                            <button
+                                onClick={() => setChartMode('freedom')}
+                                className={`px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition-all border-b-2 ${chartMode === 'freedom'
+                                    ? 'text-teal-600 border-teal-600 bg-teal-50/50'
+                                    : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-100'
+                                    }`}
+                            >
+                                <TrendingUp size={16} /> Net Position
+                            </button>
+                        </div>
+                    </div>
 
-                        if (totalOpportunityCost > 100000) {
-                            return (
-                                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between shadow-sm animate-in slide-in-from-top-2 flex-shrink-0">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-red-100 rounded-full flex-shrink-0">
-                                            <AlertTriangle size={20} className="text-red-500" />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-sm font-bold text-red-800">Fee Warning</h4>
-                                            <p className="text-xs text-red-700 mt-0.5 max-w-xl">
-                                                If you used a cheaper broker, the compound effect of these fees would be <strong>{formatLargeMoney(totalOpportunityCost)}</strong> over duration of this plan.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <button className="hidden sm:block px-4 py-2 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 transition shadow-sm">
-                                        Compare Platforms
+                    {/* Chart View Config */}
+                    <div className="px-4 md:px-6 pt-4 pb-2 flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50 gap-4">
+
+                        {/* Asset Controls (Only visible in 'assets' mode) */}
+                        {chartMode === 'assets' && (
+                            <div className="w-full md:w-auto overflow-x-auto pb-2 md:pb-0 md:mx-4 flex-1 md:flex md:justify-center min-w-0">
+                                <div className="flex items-center gap-3 bg-white px-3 py-1.5 border border-slate-200 rounded-xl shadow-sm whitespace-nowrap min-w-max">
+                                    <button
+                                        onClick={() => setIsStacked(!isStacked)}
+                                        className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-medium text-slate-700 hover:bg-slate-100 transition shadow-sm mr-2"
+                                    >
+                                        {isStacked ? <Layers size={14} className="text-blue-600" /> : <Activity size={14} className="text-blue-600" />}
+                                        {isStacked ? 'Stacked' : 'Lines'}
                                     </button>
+                                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                                    <span className="text-xs font-bold text-slate-400 uppercase mr-1">Show:</span>
+                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700 select-none">
+                                        <input type="checkbox" checked={assetVisibility.total} onChange={() => toggleAssetVisibility('total')} className="rounded text-slate-800 focus:ring-slate-800" hidden={isStacked} />
+                                        <span className={isStacked ? "hidden" : "block"}>Total Wealth</span>
+                                    </label>
+                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-yellow-600 select-none">
+                                        <input type="checkbox" checked={assetVisibility.pension} onChange={() => toggleAssetVisibility('pension')} className="rounded text-yellow-600 focus:ring-yellow-600" />
+                                        Pension
+                                    </label>
+                                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-indigo-600 select-none">
+                                        <input type="checkbox" checked={assetVisibility.isa} onChange={() => toggleAssetVisibility('isa')} className="rounded text-indigo-600 focus:ring-indigo-600" />
+                                        ISA
+                                    </label>
+                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-emerald-600 select-none">
+                                        <input type="checkbox" checked={assetVisibility.gia} onChange={() => toggleAssetVisibility('gia')} className="rounded text-emerald-600 focus:ring-emerald-600" />
+                                        GIA
+                                    </label>
+                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-lime-600 select-none">
+                                        <input type="checkbox" checked={assetVisibility.cash} onChange={() => toggleAssetVisibility('cash')} className="rounded text-lime-600 focus:ring-lime-600" />
+                                        Cash
+                                    </label>
                                 </div>
-                            );
-                        }
-                    })()}
+                            </div>
+                        )}
 
-                    <div className="flex-1 bg-white rounded-xl shadow-xl p-3 md:p-5 min-h-0">
-                        <ResultsChart
-                            data={deferredResults}
-                            mode={chartMode}
-                            assetVisibility={assetVisibility}
-                            pensionAccessAge={inputs.pensionAccessAge}
-                            retirementAge={inputs.retirementAge}
-                            mortgageEndAge={inputs.housingMode === 'mortgage' ? inputs.mortgageEndAge : 0}
-                            events={inputs.events}
-                            stacked={isStacked}
-                        />
+                        {/* 3. Right: Tax Estimate Dropdown */}
+                        <div className="relative w-full md:w-auto flex justify-end flex-none">
+                            <button
+                                onClick={() => setShowTaxYearDropdown(!showTaxYearDropdown)}
+                                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm font-semibold text-slate-600 hover:bg-slate-50 transition shadow-sm"
+                                title="View tax calculation for a specific year"
+                            >
+                                <Calculator size={16} />
+                                <span className="hidden md:inline">Tax Estimate</span>
+                                <ChevronDown size={14} className={`transition-transform ${showTaxYearDropdown ? 'rotate-180' : ''}`} />
+                            </button>
+                            {showTaxYearDropdown && (
+                                <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto min-w-[180px]">
+                                    <div className="p-2 border-b border-slate-100">
+                                        <p className="text-[10px] text-slate-400 font-medium">Select a year to view tax calculation</p>
+                                    </div>
+                                    {deferredResults.map((yr, idx) => (
+                                        <button
+                                            key={`${yr.age}-${idx}`}
+                                            onClick={() => {
+                                                setSelectedTaxYear(yr);
+                                                setShowTaxYearDropdown(false);
+                                            }}
+                                            className="w-full px-3 py-2 text-left text-xs hover:bg-slate-50 flex justify-between items-center"
+                                        >
+                                            <span className="font-medium text-slate-700">Age {yr.age}</span>
+                                            <span className="text-slate-400">{yr.year}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Main Chart Area */}
+                    <div className="flex-1 px-4 md:px-6 pb-20 md:pb-6 pt-4 flex flex-col min-h-0">
+
+                        {/* Chart Explainer Text */}
+                        <div className="mb-4">
+                            {chartMode === 'cashflow' && (
+                                <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
+                                    <span className="font-bold text-slate-800">Cash Flow:</span> Tracks annual money in (<span className="text-emerald-600 font-medium">bars above line</span>) vs. money out (<span className="text-slate-500 font-medium">bars below line</span>). Use this to identify years where expenses might exceed income.
+                                </p>
+                            )}
+                            {chartMode === 'assets' && (
+                                <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
+                                    <span className="font-bold text-slate-800">Asset Value:</span> Shows the projected total value of your assets over time. See how <span className="text-indigo-600 font-medium">compound growth</span> builds your wealth across Pension, ISA, and other pots.
+                                </p>
+                            )}
+                            {chartMode === 'freedom' && (
+                                <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
+                                    <span className="font-bold text-slate-800">Net Position:</span> Your path to Financial Freedom. The <span className="text-emerald-600 font-medium">Green Line</span> shows passive investment growth. When it crosses above <span className="text-slate-800 font-medium">Total Expenses</span>, your assets can support your lifestyle.
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="flex-1 bg-white rounded-xl shadow-xl p-3 md:p-5 min-h-0">
+                            <ResultsChart
+                                data={deferredResults}
+                                mode={chartMode}
+                                assetVisibility={assetVisibility}
+                                pensionAccessAge={inputs.pensionAccessAge}
+                                retirementAge={inputs.retirementAge}
+                                mortgageEndAge={inputs.housingMode === 'mortgage' && inputs.mortgages?.length > 0
+                                    ? Math.max(...inputs.mortgages.map(m => m.endAge || 0))
+                                    : (inputs.mortgageEndAge || 0)}
+                                events={inputs.events}
+                                stacked={isStacked}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1464,10 +1867,11 @@ const App: React.FC = () => {
 
             {/* --- Modals --- */}
             <EventModal
+                events={inputs.events || []}
+                onChange={(updated) => updateInput('events', updated)}
                 isOpen={isEventModalOpen}
                 onClose={() => setEventModalOpen(false)}
-                events={inputs.events}
-                onChange={(updated) => updateInput('events', updated)}
+                editEvent={eventToEdit} // Pass editing event
             />
 
             <DebtModal
@@ -1476,6 +1880,7 @@ const App: React.FC = () => {
                 loans={inputs.loans || []}
                 onChange={(updated) => updateInput('loans', updated)}
                 currentAge={calculatedAge}
+                editLoan={loanToEdit} // Pass editing loan
             />
 
             <MortgageModal
@@ -1484,6 +1889,7 @@ const App: React.FC = () => {
                 mortgages={inputs.mortgages || []}
                 onChange={(updated) => updateInput('mortgages', updated)}
                 currentAge={calculatedAge}
+                editMortgage={mortgageToEdit} // Pass editing state
             />
 
             <PropertyModal
@@ -1491,6 +1897,7 @@ const App: React.FC = () => {
                 onClose={() => setPropertyModalOpen(false)}
                 properties={inputs.investmentProperties || []}
                 onUpdate={(updated) => updateInput('investmentProperties', updated)}
+                editProperty={propertyToEdit} // Pass editing state
             />
 
             <DBPensionModal
@@ -1499,6 +1906,19 @@ const App: React.FC = () => {
                 pensions={inputs.dbPensions || []}
                 onUpdate={(updated) => updateInput('dbPensions', updated)}
                 currentAge={calculatedAge}
+                editPension={dbPensionToEdit}
+            />
+
+            <StatePensionModal
+                isOpen={isStatePensionModalOpen}
+                onClose={() => setStatePensionModalOpen(false)}
+                missingYears={inputs.missingNIYears ?? 0}
+                onMissingYearsChange={(years) => {
+                    updateInput('missingNIYears', years);
+                    const { annual } = calcSP(years);
+                    updateInput('statePension', annual);
+                }}
+                statePensionAge={inputs.statePensionAge}
             />
 
             <AdditionalIncomeModal
@@ -1508,6 +1928,7 @@ const App: React.FC = () => {
                 onChange={(updated) => updateInput('additionalIncomes', updated)}
                 currentAge={calculatedAge}
                 retirementAge={inputs.retirementAge}
+                editIncome={additionalIncomeToEdit} // Pass edit state
             />
 
             <StrategyModal
@@ -1563,6 +1984,12 @@ const App: React.FC = () => {
                 results={results}
                 fundsRunOutAge={fundsRunOutAge}
                 finalNetWorth={totalNetWorthEnd}
+            />
+
+            <TaxBreakdownModal
+                isOpen={selectedTaxYear !== null}
+                onClose={() => setSelectedTaxYear(null)}
+                yearData={selectedTaxYear}
             />
 
         </div >

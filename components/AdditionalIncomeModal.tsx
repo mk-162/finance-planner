@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, TrendingUp, Calendar } from 'lucide-react';
+import { X, Plus, Trash2, TrendingUp, Calendar, CheckCircle, PiggyBank } from 'lucide-react';
 import { AdditionalIncome } from '../types';
 
 interface AdditionalIncomeModalProps {
@@ -9,10 +9,11 @@ interface AdditionalIncomeModalProps {
     onChange: (updated: AdditionalIncome[]) => void;
     currentAge: number;
     retirementAge: number;
+    editIncome?: AdditionalIncome | null;
 }
 
 export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
-    isOpen, onClose, incomes, onChange, currentAge, retirementAge
+    isOpen, onClose, incomes, onChange, currentAge, retirementAge, editIncome
 }) => {
 
     // Local State for Form
@@ -20,35 +21,54 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
     const [amount, setAmount] = useState<number | ''>('');
     const [startAge, setStartAge] = useState<number>(retirementAge);
     const [endAge, setEndAge] = useState<number>(retirementAge + 5);
+    const [taxAsDividend, setTaxAsDividend] = useState(false);
 
-    // Reset form when modal opens
+    // Reset/Populate form when modal opens or editIncome changes
     useEffect(() => {
         if (isOpen) {
-            setStartAge(retirementAge);
-            setEndAge(retirementAge + 5);
+            if (editIncome) {
+                setName(editIncome.name);
+                setAmount(editIncome.amount);
+                setStartAge(editIncome.startAge);
+                setEndAge(editIncome.endAge);
+                setTaxAsDividend(editIncome.taxAsDividend || false);
+            } else {
+                setName('');
+                setAmount('');
+                setStartAge(retirementAge);
+                setEndAge(retirementAge + 5);
+                setTaxAsDividend(false);
+            }
         }
-    }, [isOpen, retirementAge]);
+    }, [isOpen, retirementAge, editIncome]);
 
     if (!isOpen) return null;
 
     const handleAdd = () => {
         if (!name || !amount) return;
 
-        const newIncome: AdditionalIncome = {
-            id: Math.random().toString(36).substr(2, 9),
+        const incomeData: AdditionalIncome = {
+            id: editIncome ? editIncome.id : Math.random().toString(36).substr(2, 9),
             name,
             amount: Number(amount),
             startAge,
-            endAge
+            endAge,
+            taxAsDividend
         };
 
-        onChange([...incomes, newIncome]);
-
-        // Reset Form
-        setName('');
-        setAmount('');
-        setStartAge(retirementAge);
-        setEndAge(retirementAge + 5);
+        if (editIncome) {
+            // Update Existing
+            onChange(incomes.map(i => i.id === editIncome.id ? incomeData : i));
+            onClose();
+        } else {
+            // Add New
+            onChange([...incomes, incomeData]);
+            // Reset Form (for multiple adds)
+            setName('');
+            setAmount('');
+            setStartAge(retirementAge);
+            setEndAge(retirementAge + 5);
+        }
     };
 
     const handlePrepopulate = () => {
@@ -58,14 +78,16 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
                 name: 'Consulting',
                 amount: 15000,
                 startAge: retirementAge,
-                endAge: retirementAge + 5
+                endAge: retirementAge + 5,
+                taxAsDividend: false
             },
             {
                 id: 'demo-2',
-                name: 'Board Position',
-                amount: 8000,
-                startAge: retirementAge + 2,
-                endAge: retirementAge + 10
+                name: 'Company Dividends',
+                amount: 20000,
+                startAge: currentAge,
+                endAge: 65,
+                taxAsDividend: true
             }
         ];
         onChange([...incomes, ...demo]);
@@ -93,7 +115,7 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
 
                     {/* Intro */}
                     <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-sm border border-slate-200">
-                        Add income sources that happen outside your main salary. Examples: Side hustles, consulting, part-time work, or rental income not tied to a property.
+                        Add income sources outside your main salary. Examples: Consulting, side hustles, dividends from shares or business ownership, part-time work, or rental income not tied to a property.
                     </div>
 
                     {/* Add Form */}
@@ -144,12 +166,28 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
                                 </div>
                             </div>
 
+                            {/* Tax Treatment Checkbox */}
+                            <label className="flex items-center gap-2 p-2 bg-purple-50 border border-purple-100 rounded cursor-pointer hover:bg-purple-100 transition">
+                                <input
+                                    type="checkbox"
+                                    checked={taxAsDividend}
+                                    onChange={e => setTaxAsDividend(e.target.checked)}
+                                    className="w-4 h-4 text-purple-600 rounded border-slate-300 focus:ring-purple-500"
+                                />
+                                <div className="flex items-center gap-1.5">
+                                    <PiggyBank size={14} className="text-purple-600" />
+                                    <span className="text-xs font-medium text-slate-700">Tax as dividend income</span>
+                                </div>
+                                <span className="text-[10px] text-slate-500 ml-auto">£500 allowance</span>
+                            </label>
+
                             <button
                                 onClick={handleAdd}
                                 disabled={!name || !amount}
-                                className="w-full py-2 bg-emerald-600 text-white rounded-sm font-bold text-xs hover:bg-emerald-700 disabled:opacity-50 transition shadow-sm mt-2"
+                                className={`w-full py-2 text-white rounded-sm font-bold text-xs disabled:opacity-50 transition shadow-sm mt-2 flex items-center justify-center gap-2 ${editIncome ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-emerald-600 hover:bg-emerald-700'}`}
                             >
-                                + Add Income Stream
+                                {editIncome ? <CheckCircle size={14} /> : <Plus size={14} />}
+                                {editIncome ? 'Update Income Stream' : '+ Add Income Stream'}
                             </button>
                         </div>
                     </div>
@@ -160,35 +198,11 @@ export const AdditionalIncomeModal: React.FC<AdditionalIncomeModalProps> = ({
                             onClick={handlePrepopulate}
                             className="w-full py-2 border border-dashed border-emerald-300 text-emerald-700 rounded-sm text-xs font-medium hover:bg-emerald-50 transition"
                         >
-                            + Add Example "Semi-Retirement" Portfolio
+                            + Add Example Income Streams
                         </button>
                     )}
 
-                    {/* List */}
-                    <div className="space-y-2">
-                        {incomes.map(item => (
-                            <div key={item.id} className="bg-white border-l-4 border-emerald-500 rounded p-3 shadow-sm flex justify-between items-center group">
-                                <div>
-                                    <div className="font-bold text-slate-800">{item.name}</div>
-                                    <div className="text-xs text-slate-500 flex items-center gap-1">
-                                        <Calendar size={12} /> Age {item.startAge} - {item.endAge}
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="text-right">
-                                        <div className="font-bold text-emerald-700">£{item.amount.toLocaleString()}</div>
-                                        <div className="text-[10px] text-slate-400">/year</div>
-                                    </div>
-                                    <button
-                                        onClick={() => removeMaximum(item.id)}
-                                        className="text-slate-300 hover:text-red-500 transition"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+
 
                 </div>
 

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Loan } from '../types';
-import { X, Plus, Trash2, CreditCard, Calendar, ArrowRight } from 'lucide-react';
+import { X, Plus, Trash2, CreditCard, Calendar, ArrowRight, CheckCircle } from 'lucide-react';
 
 interface DebtModalProps {
     loans: Loan[];
@@ -9,9 +9,10 @@ interface DebtModalProps {
     isOpen: boolean;
     onClose: () => void;
     currentAge: number;
+    editLoan?: Loan | null; // New prop
 }
 
-export const DebtModal: React.FC<DebtModalProps> = ({ loans, onChange, isOpen, onClose, currentAge }) => {
+export const DebtModal: React.FC<DebtModalProps> = ({ loans, onChange, isOpen, onClose, currentAge, editLoan }) => {
     const [newLoan, setNewLoan] = useState<Partial<Loan>>({
         name: '',
         balance: 5000,
@@ -20,29 +21,54 @@ export const DebtModal: React.FC<DebtModalProps> = ({ loans, onChange, isOpen, o
         startAge: currentAge
     });
 
+    // Populate form on open/change of editLoan
+    React.useEffect(() => {
+        if (isOpen) {
+            if (editLoan) {
+                setNewLoan({ ...editLoan });
+            } else {
+                // Reset to defaults for add mode
+                setNewLoan({
+                    name: '',
+                    balance: 5000,
+                    interestRate: 5,
+                    monthlyPayment: 200,
+                    startAge: currentAge
+                });
+            }
+        }
+    }, [isOpen, editLoan]);
+
     if (!isOpen) return null;
 
     const handleAdd = () => {
         if (!newLoan.name || !newLoan.balance || !newLoan.monthlyPayment) return;
 
-        const loan: Loan = {
-            id: Math.random().toString(36).substr(2, 9),
+        const loanData: Loan = {
+            id: editLoan ? editLoan.id : Math.random().toString(36).substr(2, 9),
             name: newLoan.name,
             balance: newLoan.balance,
             interestRate: newLoan.interestRate || 0,
             monthlyPayment: newLoan.monthlyPayment,
             startAge: newLoan.startAge || currentAge,
         };
-        onChange([...loans, loan]);
 
-        // Reset defaults
-        setNewLoan({
-            name: '',
-            balance: 5000,
-            interestRate: 5,
-            monthlyPayment: 200,
-            startAge: currentAge
-        });
+        if (editLoan) {
+            // Update existing
+            onChange(loans.map(l => l.id === editLoan.id ? loanData : l));
+            onClose(); // Close on update
+        } else {
+            // Create new
+            onChange([...loans, loanData]);
+            // Reset defaults
+            setNewLoan({
+                name: '',
+                balance: 5000,
+                interestRate: 5,
+                monthlyPayment: 200,
+                startAge: currentAge
+            });
+        }
     };
 
     const loadPreset = (name: string, balance: number, rate: number, payment: number) => {
@@ -171,9 +197,10 @@ export const DebtModal: React.FC<DebtModalProps> = ({ loans, onChange, isOpen, o
 
                         <button
                             onClick={handleAdd}
-                            className="w-full bg-slate-900 text-white text-sm font-medium py-2 rounded hover:bg-slate-800 transition flex items-center justify-center gap-2 mt-2"
+                            className={`w-full text-white text-sm font-medium py-2 rounded transition flex items-center justify-center gap-2 mt-2 ${editLoan ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-900 hover:bg-slate-800'}`}
                         >
-                            <Plus size={16} /> Add Loan
+                            {editLoan ? <CheckCircle size={16} /> : <Plus size={16} />}
+                            {editLoan ? 'Update Loan' : 'Add Loan'}
                         </button>
                     </div>
 

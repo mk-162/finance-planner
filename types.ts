@@ -34,7 +34,7 @@ export interface InvestmentProperty {
   name: string;
   value: number;
   monthlyRent: number;
-  monthlyCost: number; // New: Costs (Management, Maintenance, etc)
+  monthlyCost?: number; // Costs (Management, Maintenance, etc) - optional for backwards compatibility
   growthRate: number; // Capital Appreciation
 
   // Linked Mortgage
@@ -61,6 +61,7 @@ export interface Mortgage {
   monthlyPayment: number;
   interestRate: number;
   type: 'repayment' | 'interest_only';
+  chargeType?: 'first' | 'second'; // First or second charge mortgage
   endDate?: number; // Optional: Year mortgage ends
   endAge: number; // Age when mortgage ends
 }
@@ -72,6 +73,8 @@ export interface AdditionalIncome {
   startAge: number;
   endAge: number;
   inflationLinked?: boolean;
+  taxAsDividend?: boolean; // If true, taxed as dividend income instead of regular income
+  growthRate?: number; // Annual growth rate
 }
 
 export type SurplusTarget = 'pension' | 'isa' | 'gia' | 'cash' | 'mortgage';
@@ -92,7 +95,7 @@ export interface UserInputs {
 
   // Income
   currentSalary: number;
-  dividendIncome: number; // New: Dividends
+  dividendIncome: number; // Legacy: Single dividend value (kept for backwards compatibility)
   hasSideHustle: boolean;
   additionalIncome: number; // Legacy (to be migrated)
   isSalaryGross: boolean;
@@ -104,6 +107,7 @@ export interface UserInputs {
   additionalIncomes?: AdditionalIncome[]; // New Array Input
   statePension: number;
   statePensionAge: number;
+  missingNIYears?: number; // Missing National Insurance years (0-35), defaults to 0 for full pension
 
   // Housing / Property
   housingMode: 'mortgage' | 'rent';
@@ -180,6 +184,54 @@ export interface Scenario {
   createdAt: number;
 }
 
+// Tax breakdown for transparency modal - shows how taxes were calculated
+export interface TaxBreakdown {
+  // Gross Income Components
+  grossSalary: number;
+  grossDividends: number;
+  grossStatePension: number;
+  grossDBPension: number;
+  grossRentalProfit: number;
+  grossPensionWithdrawal: number;  // Taxable portion of pension drawdown
+  grossOther: number;
+  totalGrossIncome: number;
+
+  // Allowances Used
+  personalAllowanceUsed: number;
+  dividendAllowanceUsed: number;
+  cgtAllowanceUsed: number;
+
+  // Income Tax Breakdown
+  incomeInBasicBand: number;
+  incomeInHigherBand: number;
+  incomeInAdditionalBand: number;
+  basicRateTax: number;
+  higherRateTax: number;
+  additionalRateTax: number;
+  totalIncomeTax: number;
+
+  // National Insurance (on salary only)
+  niMainRate: number;
+  niHigherRate: number;
+  totalNI: number;
+
+  // Dividend Tax
+  dividendBasicTax: number;
+  dividendHigherTax: number;
+  dividendAdditionalTax: number;
+  totalDividendTax: number;
+
+  // Capital Gains Tax
+  cgtBasicRate: number;
+  cgtHigherRate: number;
+  totalCGT: number;
+
+  // Summary
+  totalTaxPaid: number;
+  netIncome: number;
+  effectiveTaxRate: number; // totalTaxPaid / totalGrossIncome * 100
+}
+
 export interface YearlyResult {
   age: number;
   year: number;
@@ -234,5 +286,10 @@ export interface YearlyResult {
 
   totalNetWorth: number;
   liquidNetWorth: number; // Cash + ISA + GIA
+  totalInvestmentGrowth?: number; // New: Growth from all assets in this year
   benchmarkPensionPot?: number; // New: Simulated pot with low fees
+
+  // Tax Transparency Fields
+  pensionTaxRelief: number; // Value of tax relief on pension contributions
+  taxBreakdown: TaxBreakdown; // Full breakdown for transparency modal
 }

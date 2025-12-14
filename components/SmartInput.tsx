@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SimpleFormattedInput } from './InputSection';
+import { Tooltip } from './Tooltip';
 
 interface SmartInputProps {
     label: string;
@@ -20,6 +21,10 @@ interface SmartInputProps {
     children?: React.ReactNode;
 
     colorClass?: string;
+
+    // Tooltip text
+    tooltip?: string;
+    rightTooltip?: string;
 }
 
 export const SmartInput: React.FC<SmartInputProps> = ({
@@ -35,7 +40,9 @@ export const SmartInput: React.FC<SmartInputProps> = ({
     rightValue,
     onRightChange,
     children,
-    colorClass = 'blue'
+    colorClass = 'blue',
+    tooltip,
+    rightTooltip
 }) => {
     // Debouncing for slider
     const [localValue, setLocalValue] = useState(value);
@@ -60,7 +67,10 @@ export const SmartInput: React.FC<SmartInputProps> = ({
             <div className="flex justify-between items-start mb-3">
                 {/* Left: Label + Sub-label */}
                 <div>
-                    <div className="text-sm font-semibold text-slate-800">{label}</div>
+                    <div className="flex items-center gap-1">
+                        <span className="text-sm font-semibold text-slate-800">{label}</span>
+                        {tooltip && <Tooltip text={tooltip} />}
+                    </div>
                     {subLabel && <div className="text-xs text-slate-400">{subLabel}</div>}
                 </div>
 
@@ -78,10 +88,11 @@ export const SmartInput: React.FC<SmartInputProps> = ({
                     {rightLabel && onRightChange && (
                         <div className="flex items-center gap-0.5 bg-slate-50 rounded-md p-1.5 border border-slate-200">
                             <span className="text-[10px] text-slate-400 font-medium mr-1">{rightLabel}</span>
+                            {rightTooltip && <Tooltip text={rightTooltip} className="mr-1" />}
                             <div className="w-12">
                                 <input
                                     type="number"
-                                    min={0}
+                                    min={-10}
                                     max={15}
                                     step={0.1}
                                     value={rightValue}

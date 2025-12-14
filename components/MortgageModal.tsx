@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mortgage } from '../types';
-import { X, Plus, Trash2, Home, Building } from 'lucide-react';
+import { X, Plus, Home, CheckCircle } from 'lucide-react';
 
 interface MortgageModalProps {
     mortgages: Mortgage[];
@@ -9,17 +9,38 @@ interface MortgageModalProps {
     isOpen: boolean;
     onClose: () => void;
     currentAge: number;
+    editMortgage?: Mortgage | null; // New prop for editing
 }
 
-export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChange, isOpen, onClose, currentAge }) => {
+export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChange, isOpen, onClose, currentAge, editMortgage }) => {
     const [newMortgage, setNewMortgage] = useState<Partial<Mortgage>>({
         name: 'Main Home',
         balance: 200000,
         interestRate: 4.5,
         monthlyPayment: 1200,
         type: 'repayment',
+        chargeType: 'first',
         endAge: currentAge + 25
     });
+
+    // Populate / Reset
+    useEffect(() => {
+        if (isOpen) {
+            if (editMortgage) {
+                setNewMortgage({ ...editMortgage });
+            } else {
+                setNewMortgage({
+                    name: 'Main Home',
+                    balance: 200000,
+                    interestRate: 4.5,
+                    monthlyPayment: 1200, // Default prompt
+                    type: 'repayment',
+                    chargeType: 'first',
+                    endAge: currentAge + 25
+                });
+            }
+        }
+    }, [isOpen, editMortgage, currentAge]);
 
     if (!isOpen) return null;
 
@@ -27,30 +48,61 @@ export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChang
         // Validate
         if (!newMortgage.name || !newMortgage.balance || !newMortgage.monthlyPayment) return;
 
-        const mortgage: Mortgage = {
-            id: Math.random().toString(36).substr(2, 9),
+        const mortgageData: Mortgage = {
+            id: editMortgage ? editMortgage.id : Math.random().toString(36).substr(2, 9),
             name: newMortgage.name,
             balance: newMortgage.balance,
             interestRate: newMortgage.interestRate || 0,
             monthlyPayment: newMortgage.monthlyPayment,
             type: newMortgage.type || 'repayment',
+            chargeType: newMortgage.chargeType || 'first',
             endAge: newMortgage.endAge || (currentAge + 25)
         };
-        onChange([...mortgages, mortgage]);
 
-        // Reset defaults (for next entry)
-        setNewMortgage({
-            name: 'Second Property',
-            balance: 150000,
-            interestRate: 5,
-            monthlyPayment: 900,
-            type: 'interest_only',
-            endAge: currentAge + 20
-        });
+        if (editMortgage) {
+            // Update existing
+            onChange(mortgages.map(m => m.id === editMortgage.id ? mortgageData : m));
+            onClose();
+        } else {
+            // Add new
+            onChange([...mortgages, mortgageData]);
+
+            // Reset for next entry
+            setNewMortgage({
+                name: 'Second Charge Loan',
+                balance: 30000,
+                interestRate: 6.5,
+                monthlyPayment: 200,
+                type: 'interest_only',
+                chargeType: 'second',
+                endAge: currentAge + 15
+            });
+            onClose();
+        }
     };
 
-    const handleRemove = (id: string) => {
-        onChange(mortgages.filter(m => m.id !== id));
+    // Helper: Calculate Repayment (Opt-In)
+    const calculateRepayment = () => {
+        const principal = newMortgage.balance || 0;
+        const rate = (newMortgage.interestRate || 0) / 100 / 12;
+        const years = (newMortgage.endAge || (currentAge + 25)) - currentAge;
+        const months = years * 12;
+
+        if (principal <= 0 || months <= 0) return;
+
+        let payment = 0;
+        if (newMortgage.type === 'interest_only') {
+            payment = (principal * (newMortgage.interestRate || 0) / 100) / 12;
+        } else {
+            // Mortgage Formula: M = P [ i(1 + i)^n ] / [ (1 + i)^n – 1 ]
+            if (rate === 0) {
+                payment = principal / months;
+            } else {
+                payment = principal * (rate * Math.pow(1 + rate, months)) / (Math.pow(1 + rate, months) - 1);
+            }
+        }
+
+        setNewMortgage(prev => ({ ...prev, monthlyPayment: Math.round(payment) }));
     };
 
     return (
@@ -61,7 +113,7 @@ export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChang
                 <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                     <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                         <Home size={20} className="text-blue-600" />
-                        Manage Mortgages
+                        {editMortgage ? 'Edit Mortgage' : 'Add New Mortgage'}
                     </h2>
                     <button onClick={onClose} className="text-slate-500 hover:text-slate-800 transition">
                         <X size={20} />
@@ -69,60 +121,52 @@ export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChang
                 </div>
 
                 <div className="p-6 overflow-y-auto">
-
-                    {/* Add New Form */}
-                    <div className="bg-blue-50/50 p-4 rounded-sm mb-6 border border-blue-100 shadow-sm">
+                    <div className="bg-blue-50/50 p-4 rounded-sm border border-blue-100 shadow-sm">
                         <div className="text-xs font-bold text-blue-800 uppercase mb-3 flex items-center gap-2">
-                            <Plus size={14} /> Add New Mortgage
+                            {editMortgage ? 'Update Details' : 'Enter Details'}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div className="grid grid-cols-2 gap-4 mb-3">
                             {/* Name */}
-                            <input
-                                type="text"
-                                placeholder="Name (e.g. Main Home)"
-                                className="col-span-2 text-sm p-2 rounded border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none"
-                                value={newMortgage.name}
-                                onChange={e => setNewMortgage({ ...newMortgage, name: e.target.value })}
-                            />
+                            <div className="col-span-2">
+                                <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Mortgage Name</label>
+                                <input
+                                    type="text"
+                                    placeholder="Name (e.g. Main Home)"
+                                    className="w-full text-sm p-2 rounded border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none"
+                                    value={newMortgage.name}
+                                    onChange={e => setNewMortgage({ ...newMortgage, name: e.target.value })}
+                                />
+                            </div>
 
                             {/* Balance */}
-                            <div className="flex flex-col gap-1">
+                            <div className="col-span-2 flex flex-col gap-1">
                                 <label className="text-[10px] uppercase font-bold text-slate-500">Outstanding Balance</label>
-                                <div className="flex items-center bg-white border border-slate-300 rounded px-2">
-                                    <span className="text-slate-500 text-xs mr-1 font-bold">£</span>
+                                <div className="flex items-center bg-white border border-slate-300 rounded px-2 focus-within:ring-2 focus-within:ring-blue-500 ring-offset-1 transition-all">
+                                    <span className="text-slate-500 text-lg mr-2 font-bold">£</span>
                                     <input
                                         type="number"
-                                        className="w-full text-sm p-2 outline-none"
+                                        className="w-full text-lg font-bold p-2 outline-none text-slate-700 placeholder-slate-300"
                                         value={newMortgage.balance}
                                         onChange={e => setNewMortgage({ ...newMortgage, balance: Number(e.target.value) })}
                                     />
                                 </div>
                             </div>
 
-                            {/* Interest Rate */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-500">Interest Rate</label>
-                                <div className="flex items-center bg-white border border-slate-300 rounded px-2">
-                                    <input
-                                        type="number"
-                                        step={0.1}
-                                        className="w-full text-sm p-2 outline-none"
-                                        value={newMortgage.interestRate}
-                                        onChange={e => setNewMortgage({ ...newMortgage, interestRate: Number(e.target.value) })}
-                                    />
-                                    <span className="text-slate-500 text-xs ml-1 font-bold">%</span>
-                                </div>
-                            </div>
+                            <div className="col-span-2 py-2 border-t border-slate-200 my-1"></div>
+
+                            {/* PRIMARY INPUTS: Payment & End Age */}
 
                             {/* Monthly Payment */}
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-500">Monthly Payment</label>
-                                <div className="flex items-center bg-white border border-slate-300 rounded px-2">
-                                    <span className="text-slate-500 text-xs mr-1 font-bold">£</span>
+                                <div className="flex justify-between items-center">
+                                    <label className="text-[10px] uppercase font-bold text-slate-700">Monthly Payment</label>
+                                </div>
+                                <div className="flex items-center bg-white border border-slate-300 rounded px-2 h-10 shadow-sm">
+                                    <span className="text-slate-500 text-sm mr-1 font-bold">£</span>
                                     <input
                                         type="number"
-                                        className="w-full text-sm p-2 outline-none"
+                                        className="w-full text-sm font-bold p-2 outline-none text-slate-800"
                                         value={newMortgage.monthlyPayment}
                                         onChange={e => setNewMortgage({ ...newMortgage, monthlyPayment: Number(e.target.value) })}
                                     />
@@ -131,14 +175,18 @@ export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChang
 
                             {/* End Age */}
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-500">End Age</label>
-                                <input
-                                    type="number"
-                                    className="w-full text-sm p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                    value={newMortgage.endAge}
-                                    onChange={e => setNewMortgage({ ...newMortgage, endAge: Number(e.target.value) })}
-                                />
-                                <span className="text-[9px] text-slate-400">Paid off/Ends</span>
+                                <label className="text-[10px] uppercase font-bold text-slate-700">Mortgage End Age</label>
+                                <div className="flex items-center bg-white border border-slate-300 rounded px-2 h-10 shadow-sm relative">
+                                    <input
+                                        type="number"
+                                        className="w-full text-sm font-bold p-2 outline-none text-slate-800"
+                                        value={newMortgage.endAge}
+                                        onChange={e => setNewMortgage({ ...newMortgage, endAge: Number(e.target.value) })}
+                                    />
+                                    <span className="text-[10px] text-slate-400 absolute right-2 font-medium bg-slate-50 px-1 rounded">
+                                        Term: {Math.max(0, (newMortgage.endAge || 0) - currentAge)}y
+                                    </span>
+                                </div>
                             </div>
 
                             {/* Type Toggle */}
@@ -159,62 +207,65 @@ export const MortgageModal: React.FC<MortgageModalProps> = ({ mortgages, onChang
                                     </button>
                                 </div>
                             </div>
+
+                            {/* Charge Type Toggle */}
+                            <div className="col-span-2 flex items-center justify-between bg-white p-2 rounded border border-slate-200">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase">Charge</span>
+                                <div className="flex bg-slate-100 rounded p-0.5">
+                                    <button
+                                        onClick={() => setNewMortgage({ ...newMortgage, chargeType: 'first' })}
+                                        className={`px-3 py-1 text-[10px] font-bold rounded transition ${newMortgage.chargeType === 'first' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                                    >
+                                        First
+                                    </button>
+                                    <button
+                                        onClick={() => setNewMortgage({ ...newMortgage, chargeType: 'second' })}
+                                        className={`px-3 py-1 text-[10px] font-bold rounded transition ${newMortgage.chargeType === 'second' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500'}`}
+                                    >
+                                        Second
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Advanced / Optional Rate Section */}
+                            <div className="col-span-2 mt-2 pt-2 border-t border-slate-200 bg-slate-50/50 p-2 rounded">
+                                <div className="flex justify-between items-end mb-1">
+                                    <label className="text-[9px] uppercase font-bold text-slate-400">Interest Rate (Optional Ref)</label>
+                                    {/* Helper Button */}
+                                    <button
+                                        onClick={calculateRepayment}
+                                        className="text-[9px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded hover:bg-blue-100 transition border border-blue-200"
+                                        title="Calculate Monthly Payment based on Balance, Rate and End Age"
+                                    >
+                                        Auto-Calc Payment
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex items-center bg-white border border-slate-200 rounded px-2 h-8 w-24">
+                                        <input
+                                            type="number"
+                                            step={0.1}
+                                            className="w-full text-xs p-1 outline-none text-slate-600"
+                                            value={newMortgage.interestRate}
+                                            onChange={e => setNewMortgage({ ...newMortgage, interestRate: Number(e.target.value) })}
+                                        />
+                                        <span className="text-slate-400 text-xs ml-1 font-bold">%</span>
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 leading-tight flex-1">
+                                        Used for calculations if you click 'Auto-Calc'. Otherwise, manual Payment is used.
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
 
                         <button
                             onClick={handleAdd}
-                            className="w-full bg-slate-900 text-white text-sm font-medium py-2 rounded hover:bg-slate-800 transition flex items-center justify-center gap-2 mt-2 shadow-lg"
+                            className={`w-full text-white text-sm font-medium py-2 rounded transition flex items-center justify-center gap-2 mt-2 shadow-lg ${editMortgage ? 'bg-blue-700 hover:bg-blue-800' : 'bg-slate-900 hover:bg-slate-800'}`}
                         >
-                            <Plus size={16} /> Add Mortgage
+                            {editMortgage ? <CheckCircle size={16} /> : <Plus size={16} />}
+                            {editMortgage ? 'Update Mortgage' : 'Add Mortgage'}
                         </button>
-                    </div>
-
-                    {/* List */}
-                    <div className="space-y-3">
-                        {mortgages.length === 0 && (
-                            <p className="text-center text-slate-400 text-sm py-8 bg-slate-50 rounded-sm border border-dashed border-slate-200">
-                                No mortgages configured.
-                            </p>
-                        )}
-                        {mortgages.map(m => (
-                            <div key={m.id} className="relative group bg-white border border-slate-200 rounded-sm shadow-sm hover:shadow-md transition p-3">
-                                <div className="flex justify-between items-start mb-2">
-                                    <div className="flex items-center gap-2">
-                                        <div className="bg-blue-50 p-1.5 rounded text-blue-600">
-                                            <Building size={16} />
-                                        </div>
-                                        <div>
-                                            <div className="font-bold text-slate-800 text-sm">{m.name}</div>
-                                            <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{m.type.replace('_', ' ')}</div>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="font-mono font-bold text-slate-700">£{m.balance.toLocaleString()}</div>
-                                        <div className="text-[10px] text-slate-400">Outstanding</div>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center justify-between text-xs bg-slate-50 rounded p-2 text-slate-600">
-                                    <div>
-                                        <span className="font-bold">£{m.monthlyPayment}</span><span className="text-[10px]">/mo</span>
-                                    </div>
-                                    <div>
-                                        <span className="font-bold">{m.interestRate}%</span> Interest
-                                    </div>
-                                    <div>
-                                        Ends Age <span className="font-bold">{m.endAge}</span>
-                                    </div>
-                                </div>
-
-                                <button
-                                    onClick={() => handleRemove(m.id)}
-                                    className="absolute -top-2 -right-2 bg-white text-slate-400 hover:text-red-500 p-1.5 rounded-full shadow border border-slate-100 opacity-0 group-hover:opacity-100 transition"
-                                    title="Remove Mortgage"
-                                >
-                                    <Trash2 size={14} />
-                                </button>
-                            </div>
-                        ))}
                     </div>
                 </div>
 

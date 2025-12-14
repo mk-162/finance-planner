@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Tooltip } from './Tooltip';
 
 interface NumberInputProps {
   label: string;
@@ -12,7 +13,7 @@ interface NumberInputProps {
 }
 
 export const SimpleFormattedInput: React.FC<any> = ({ value, onChange, className, prefix, suffix, ...props }) => {
-  const format = (v: number) => v === undefined || v === null ? '' : v.toLocaleString('en-GB');
+  const format = (v: number) => v === undefined || v === null ? '' : Math.round(v).toLocaleString('en-GB');
 
   const [display, setDisplay] = useState(format(value));
   const isFocused = useRef(false);
@@ -110,10 +111,11 @@ interface SliderInputProps {
   max: number;
   step?: number;
   formatValue?: (val: number) => string;
+  tooltip?: string;
 }
 
 export const SliderInput: React.FC<SliderInputProps> = ({
-  label, value, onChange, min, max, step = 1, formatValue
+  label, value, onChange, min, max, step = 1, formatValue, tooltip
 }) => {
   const [localValue, setLocalValue] = useState(value);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -142,7 +144,10 @@ export const SliderInput: React.FC<SliderInputProps> = ({
   return (
     <div className="mb-5">
       <div className="flex justify-between items-center mb-1">
-        <label className="text-xs font-semibold text-slate-500 uppercase">{label}</label>
+        <label className="flex items-center gap-1 text-xs font-semibold text-slate-500 uppercase">
+          {label}
+          {tooltip && <Tooltip text={tooltip} />}
+        </label>
         <span className="text-sm font-bold text-slate-700">
           {formatValue ? formatValue(localValue) : localValue}
         </span>

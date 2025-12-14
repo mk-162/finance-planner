@@ -1,6 +1,6 @@
 
 
-import { UserInputs, YearlyResult, SurplusTarget, Loan } from '../types';
+import { UserInputs, YearlyResult, SurplusTarget, Loan, TaxBreakdown } from '../types';
 
 
 /**
@@ -13,163 +13,384 @@ import { UserInputs, YearlyResult, SurplusTarget, Loan } from '../types';
  */
 export const getStatePensionAge = (birthYear: number): number => {
     if (birthYear < 1960) return 66;
-    if (birthYear === 1960) return 66; // Transitional year, simplified
-    if (birthYear <= 1977) return 67;
-    return 68; // Born 1978 onwards
+    if (birthYear === 1960) return 66; // Transitional year (66y + months), simplified
+    if (birthYear < 1977) return 67; // Born 1961-1976
+    return 68; // Born 1977 onwards (conservative - regulations say 6 April 1977+)
 };
 
 /**
- * Advanced UK Tax Estimator (2024/25 Basis + Inflation Logic)
- * Handles Salary (NI + Income Tax) and Dividends (Dividend Tax) stacking.
- * Supports Personal Allowance Taper for high earners (>100k).
+ * UK Tax Constants (2024/25)
+ * FROZEN thresholds remain fixed, others inflate with assumptions
  */
+const UK_TAX_CONSTANTS = {
+    // FROZEN until 2028 - do NOT inflate
+    PERSONAL_ALLOWANCE: 12570,
+    PA_TAPER_THRESHOLD: 100000,
+    NI_PRIMARY_THRESHOLD: 12570,
+    NI_UPPER_THRESHOLD: 50270,
+
+    // Can inflate (assumptions about future policy)
+    BASIC_RATE_BAND_WIDTH: 37700,  // £50,270 - £12,570
+    HIGHER_RATE_CEILING: 125140,
+
+    // Allowances (can inflate)
+    DIVIDEND_ALLOWANCE: 500,
+    CGT_ALLOWANCE: 3000,
+
+    // Rates
+    NI_MAIN_RATE: 0.08,
+    NI_HIGHER_RATE: 0.02,
+    BASIC_RATE: 0.20,
+    HIGHER_RATE: 0.40,
+    ADDITIONAL_RATE: 0.45,
+    DIVIDEND_BASIC: 0.0875,
+    DIVIDEND_HIGHER: 0.3375,
+    DIVIDEND_ADDITIONAL: 0.3935,
+    CGT_BASIC: 0.10,
+    CGT_HIGHER: 0.20,
+};
+
+/**
+ * Advanced UK Tax Estimator (2024/25 Basis)
+ * Now includes State Pension & DB Pension in tax calculation
+ * Returns detailed breakdown for transparency modal
+ */
+interface TaxCalculationResult {
+    netSalary: number;
+    netDividends: number;
+    netPensionIncome: number;
+    netRentalProfit: number;
+    breakdown: Partial<TaxBreakdown>;
+}
+
 const calculateUKNetIncome = (
     grossSalary: number,
     grossDividends: number,
+    grossStatePension: number,
+    grossDBPension: number,
+    grossRentalProfit: number,
     otherTaxableIncome: number,
+    grossPensionWithdrawal: number,  // Pension drawdown (gross amount withdrawn)
+    pensionTaxFreePct: number,       // % that is tax-free (25% if lump sum not taken, 0% if already taken)
     inflationMultiplier: number
-): { netSalary: number, netDividends: number } => {
+): TaxCalculationResult => {
+    const c = UK_TAX_CONSTANTS;
 
-    // 1. Base Constants (2024/25) - Inflated to avoid fiscal drag in projections
-    const BASE_PERSONAL_ALLOWANCE = 12570;
-    const BASE_BASIC_RATE_LIMIT = 50270;
-    const BASE_HIGHER_RATE_LIMIT = 125140;
-    const BASE_DIVIDEND_ALLOWANCE = 500;
+    // FROZEN thresholds - no inflation
+    const personalAllowanceCap = c.PERSONAL_ALLOWANCE;
+    const paTaperThreshold = c.PA_TAPER_THRESHOLD;
+    const niPrimaryThreshold = c.NI_PRIMARY_THRESHOLD;
+    const niUpperThreshold = c.NI_UPPER_THRESHOLD;
 
-    // Apply Inflation to Bands
-    const personalAllowanceCap = BASE_PERSONAL_ALLOWANCE * inflationMultiplier;
-    const basicRateLimit = BASE_BASIC_RATE_LIMIT * inflationMultiplier;
-    const higherRateLimit = BASE_HIGHER_RATE_LIMIT * inflationMultiplier;
-    const dividendAllowance = BASE_DIVIDEND_ALLOWANCE * inflationMultiplier;
+    // Thresholds that inflate
+    const basicRateBandWidth = c.BASIC_RATE_BAND_WIDTH * inflationMultiplier;
+    const higherRateCeiling = c.HIGHER_RATE_CEILING * inflationMultiplier;
+    const dividendAllowance = c.DIVIDEND_ALLOWANCE * inflationMultiplier;
 
-    const totalNonDividendIncome = grossSalary + otherTaxableIncome;
-    const totalAdjustedIncome = totalNonDividendIncome + grossDividends; // For Taper calculation (simplified)
+    // Calculate taxable portion of pension withdrawal
+    // (1 - pensionTaxFreePct) is the taxable portion
+    const taxablePensionWithdrawal = grossPensionWithdrawal * (1 - pensionTaxFreePct);
+
+    // Total non-dividend taxable income (all taxed at income tax rates)
+    // Pension income is taxable but NOT subject to NI
+    const salaryOnlyIncome = grossSalary; // For NI calculation
+    const totalNonDividendIncome = grossSalary + grossStatePension + grossDBPension + grossRentalProfit + otherTaxableIncome + taxablePensionWithdrawal;
+    const totalAdjustedIncome = totalNonDividendIncome + grossDividends;
 
     // --- PA Taper Logic (The 60% Trap) ---
-    // For every £2 earned over £100k (adjusted for inflation), lose £1 of PA.
-    const taperThreshold = 100000 * inflationMultiplier;
+    // For every £2 earned over £100k, lose £1 of PA
+    // £100k threshold is FROZEN
     let availablePersonalAllowance = personalAllowanceCap;
+    let personalAllowanceUsed = 0;
 
-    if (totalAdjustedIncome > taperThreshold) {
-        const reduction = (totalAdjustedIncome - taperThreshold) / 2;
+    if (totalAdjustedIncome > paTaperThreshold) {
+        const reduction = (totalAdjustedIncome - paTaperThreshold) / 2;
         availablePersonalAllowance = Math.max(0, personalAllowanceCap - reduction);
     }
 
-    // --- A. National Insurance (Class 1) on Salary Only ---
-    // NI Thresholds usually freeze or move differently, but we'll inflate them for consistency
-    const niPrimaryThreshold = 12570 * inflationMultiplier;
+    // --- A. National Insurance (Class 1) on SALARY ONLY ---
+    // NI is NOT paid on pension income, rental income, or dividends
+    // NI thresholds are FROZEN
+    let niMain = 0;
+    let niHigher = 0;
 
-    let ni = 0;
-    let niable = Math.max(0, grossSalary - niPrimaryThreshold);
+    let niable = Math.max(0, salaryOnlyIncome - niPrimaryThreshold);
     if (niable > 0) {
-        // Main Rate (8%) up to Basic Rate Limit (approx)
-        const amountAtMain = Math.min(niable, basicRateLimit - niPrimaryThreshold);
-        ni += amountAtMain * 0.08;
+        // Main Rate (8%) from threshold to upper limit
+        const amountAtMain = Math.min(niable, niUpperThreshold - niPrimaryThreshold);
+        niMain = amountAtMain * c.NI_MAIN_RATE;
         niable -= amountAtMain;
     }
     if (niable > 0) {
-        // Additional Rate (2%) above
-        ni += niable * 0.02;
+        // Higher Rate (2%) above upper limit - NO CEILING
+        niHigher = niable * c.NI_HIGHER_RATE;
     }
+    const totalNI = niMain + niHigher;
 
-    // --- B. Income Tax (Non-Savings) ---
-    // Salary uses the bands first.
-    let taxSalary = 0;
-    let remainingAllowance = availablePersonalAllowance;
+    // --- B. Income Tax (Non-Savings, Non-Dividend) ---
     let taxableSalary = totalNonDividendIncome;
 
-    // Apply Allowance
-    if (taxableSalary > remainingAllowance) {
-        taxableSalary -= remainingAllowance;
-        remainingAllowance = 0;
+    // Apply Personal Allowance
+    if (taxableSalary > availablePersonalAllowance) {
+        personalAllowanceUsed = availablePersonalAllowance;
+        taxableSalary -= availablePersonalAllowance;
     } else {
-        remainingAllowance -= taxableSalary;
+        personalAllowanceUsed = taxableSalary;
         taxableSalary = 0;
     }
 
     let incomeInBasic = 0;
     let incomeInHigher = 0;
     let incomeInAdditional = 0;
+    let basicRateTax = 0;
+    let higherRateTax = 0;
+    let additionalRateTax = 0;
 
     // Basic Rate Band (20%)
     if (taxableSalary > 0) {
-        const bandSize = basicRateLimit - availablePersonalAllowance; // Band size shrinks if PA shrinks? No, band usually fixed width, but in UK system Basic Rate Limit is a hard ceiling usually.
-        // Actually UK system: Basic Rate Limit is £50,270 *including* PA.
-        // Taxable Band Width = 37,700.
-        // If PA is 0, Basic Rate Band is still 37,700? 
-        // UK Rule: Basic rate band is £37,700. If you lose PA, you pay basic rate on the first £37,700.
-        const basicBandWidth = (BASE_BASIC_RATE_LIMIT - BASE_PERSONAL_ALLOWANCE) * inflationMultiplier;
-
-        const amount = Math.min(taxableSalary, basicBandWidth);
-        taxSalary += amount * 0.20;
+        const amount = Math.min(taxableSalary, basicRateBandWidth);
+        basicRateTax = amount * c.BASIC_RATE;
         incomeInBasic = amount;
         taxableSalary -= amount;
     }
+
     // Higher Rate Band (40%)
     if (taxableSalary > 0) {
-        const higherBandWidth = (BASE_HIGHER_RATE_LIMIT - BASE_BASIC_RATE_LIMIT) * inflationMultiplier;
+        const higherBandWidth = higherRateCeiling - personalAllowanceCap - basicRateBandWidth;
         const amount = Math.min(taxableSalary, higherBandWidth);
-        taxSalary += amount * 0.40;
+        higherRateTax = amount * c.HIGHER_RATE;
         incomeInHigher = amount;
         taxableSalary -= amount;
     }
+
     // Additional Rate Band (45%)
     if (taxableSalary > 0) {
-        taxSalary += taxableSalary * 0.45;
+        additionalRateTax = taxableSalary * c.ADDITIONAL_RATE;
         incomeInAdditional = taxableSalary;
     }
 
+    const totalIncomeTax = basicRateTax + higherRateTax + additionalRateTax;
+
     // --- C. Dividend Tax ---
-    // Dividends sit on top of Total Non-Dividend Income
-    let taxDividends = 0;
+    let dividendBasicTax = 0;
+    let dividendHigherTax = 0;
+    let dividendAdditionalTax = 0;
+    let dividendAllowanceUsed = Math.min(grossDividends, dividendAllowance);
+
     let taxableDivs = Math.max(0, grossDividends - dividendAllowance);
 
-    // We need to know where the Dividends start in the bands.
-    // The "Start Point" is totalNonDividendIncome relative to the bands.
-    // Logic: Treat bands as buckets filled by salary first.
+    // Dividends stack on top of non-dividend income
+    // Find remaining space in each band
 
-    // Remaining space in Basic Band?
-    const basicBandWidth = (BASE_BASIC_RATE_LIMIT - BASE_PERSONAL_ALLOWANCE) * inflationMultiplier;
-    const usedBasic = incomeInBasic; // Amount of salary in basic
-    let remainingBasic = Math.max(0, basicBandWidth - usedBasic);
+    // Remaining space in Basic Band
+    let remainingBasic = Math.max(0, basicRateBandWidth - incomeInBasic);
 
-    // If salary didn't even use up PA, we have PA overlap? No, dividends use PA first if available.
-    // Simplified: We assumed Salary used PA.
-
-    // 1. Fill remaining Basic Band (8.75%)
     if (taxableDivs > 0 && remainingBasic > 0) {
         const amount = Math.min(taxableDivs, remainingBasic);
-        taxDividends += amount * 0.0875;
+        dividendBasicTax = amount * c.DIVIDEND_BASIC;
         taxableDivs -= amount;
     }
 
-    // 2. Fill Higher Band (33.75%)
-    const higherBandWidth = (BASE_HIGHER_RATE_LIMIT - BASE_BASIC_RATE_LIMIT) * inflationMultiplier;
-    const usedHigher = incomeInHigher;
-    let remainingHigher = Math.max(0, higherBandWidth - usedHigher);
+    // Remaining space in Higher Band
+    const higherBandWidth = higherRateCeiling - personalAllowanceCap - basicRateBandWidth;
+    let remainingHigher = Math.max(0, higherBandWidth - incomeInHigher);
 
     if (taxableDivs > 0 && remainingHigher > 0) {
         const amount = Math.min(taxableDivs, remainingHigher);
-        taxDividends += amount * 0.3375;
+        dividendHigherTax = amount * c.DIVIDEND_HIGHER;
         taxableDivs -= amount;
     }
 
-    // 3. Additional Rate (39.35%)
+    // Additional Rate
     if (taxableDivs > 0) {
-        taxDividends += taxableDivs * 0.3935;
+        dividendAdditionalTax = taxableDivs * c.DIVIDEND_ADDITIONAL;
     }
 
-    // Total Tax
-    const netSalaryTotal = totalNonDividendIncome - taxSalary - ni;
-    const netDividends = grossDividends - taxDividends;
+    const totalDividendTax = dividendBasicTax + dividendHigherTax + dividendAdditionalTax;
 
-    // Split netSalaryTotal back relative to input (approx)
-    const ratio = grossSalary / (totalNonDividendIncome || 1);
+    // --- Calculate Net Amounts ---
+    const totalTaxOnNonDividend = totalIncomeTax + totalNI;
+    const totalTaxPaid = totalIncomeTax + totalNI + totalDividendTax;
+    const totalGrossIncome = totalNonDividendIncome + grossDividends;
+    const netIncome = totalGrossIncome - totalTaxPaid;
+
+    // Split tax proportionally across income sources (for reporting)
+    const salaryRatio = grossSalary / (totalNonDividendIncome || 1);
+    const statePensionRatio = grossStatePension / (totalNonDividendIncome || 1);
+    const dbPensionRatio = grossDBPension / (totalNonDividendIncome || 1);
+    const rentalRatio = grossRentalProfit / (totalNonDividendIncome || 1);
+
+    // Salary pays both income tax AND NI
+    const salaryIncomeTax = totalIncomeTax * salaryRatio;
+    const netSalaryIncome = grossSalary - salaryIncomeTax - totalNI;
+
+    // Other income only pays income tax (no NI)
+    const pensionIncomeTax = totalIncomeTax * (statePensionRatio + dbPensionRatio);
+    const netPensionIncome = (grossStatePension + grossDBPension) - pensionIncomeTax;
+
+    const rentalIncomeTax = totalIncomeTax * rentalRatio;
+    const netRentalProfit = grossRentalProfit - rentalIncomeTax;
+
+    const netDividends = grossDividends - totalDividendTax;
+
+    // Build breakdown for transparency modal
+    const breakdown: Partial<TaxBreakdown> = {
+        grossSalary,
+        grossDividends,
+        grossStatePension,
+        grossDBPension,
+        grossRentalProfit,
+        grossPensionWithdrawal: taxablePensionWithdrawal,  // Taxable portion of pension drawdown
+        grossOther: otherTaxableIncome,
+        totalGrossIncome,
+        personalAllowanceUsed,
+        dividendAllowanceUsed,
+        cgtAllowanceUsed: 0, // Set externally for CGT events
+        incomeInBasicBand: incomeInBasic,
+        incomeInHigherBand: incomeInHigher,
+        incomeInAdditionalBand: incomeInAdditional,
+        basicRateTax,
+        higherRateTax,
+        additionalRateTax,
+        totalIncomeTax,
+        niMainRate: niMain,
+        niHigherRate: niHigher,
+        totalNI,
+        dividendBasicTax,
+        dividendHigherTax,
+        dividendAdditionalTax,
+        totalDividendTax,
+        cgtBasicRate: 0, // Set externally
+        cgtHigherRate: 0, // Set externally
+        totalCGT: 0, // Set externally
+        totalTaxPaid,
+        netIncome,
+        effectiveTaxRate: totalGrossIncome > 0 ? (totalTaxPaid / totalGrossIncome) * 100 : 0,
+    };
 
     return {
-        netSalary: netSalaryTotal * ratio,
-        netDividends: netDividends
+        netSalary: netSalaryIncome,
+        netDividends,
+        netPensionIncome,
+        netRentalProfit,
+        breakdown,
     };
+};
+
+/**
+ * Helper: Resolve exact Gross Withdrawal needed to achieve a target Net amount
+ * Uses binary search because inverting the progressive tax logic is complex.
+ */
+const resolveGrossWithdrawalForTargetNet = (
+    targetNetDeficit: number,
+    context: {
+        grossSalary: number;
+        grossDividends: number;
+        grossStatePension: number;
+        grossDBPension: number;
+        grossRentalProfit: number;
+        otherTaxableIncome: number;
+        pensionTaxFreePct: number;
+        inflationMultiplier: number;
+    },
+    availablePot: number
+): { gross: number; net: number } => {
+    // 1. Calculate Baseline Net Income (without withdrawal)
+    const baseline = calculateUKNetIncome(
+        context.grossSalary,
+        context.grossDividends,
+        context.grossStatePension,
+        context.grossDBPension,
+        context.grossRentalProfit,
+        context.otherTaxableIncome,
+        0,
+        context.pensionTaxFreePct,
+        context.inflationMultiplier
+    );
+
+    const baselineNet = baseline.breakdown.netIncome || 0;
+    const targetNetTotal = baselineNet + targetNetDeficit;
+
+    // 2. Binary Search for Gross Withdrawal
+    let low = targetNetDeficit; // Minimum possible (0% tax)
+    let high = targetNetDeficit * 2.5; // Generous upper bound (assuming >60% effective tax worst case)
+
+    // Safety clamp upper bound to available pot if it's small, matches 'low' if available is tiny
+    if (high > availablePot) high = Math.max(low, availablePot);
+
+    // If available pot is less than the theoretical minimum needed (low), just take it all
+    if (availablePot < low) {
+        const result = calculateUKNetIncome(
+            context.grossSalary,
+            context.grossDividends,
+            context.grossStatePension,
+            context.grossDBPension,
+            context.grossRentalProfit,
+            context.otherTaxableIncome,
+            availablePot,
+            context.pensionTaxFreePct,
+            context.inflationMultiplier
+        );
+        return { gross: availablePot, net: (result.breakdown.netIncome || 0) - baselineNet };
+    }
+
+    let iterations = 0;
+    let bestGross = high;
+    let bestNetDiff = 0;
+
+    while (low <= high && iterations < 30) { // 30 iterations is ample for penny precision
+        const mid = (low + high) / 2;
+
+        // Calculate Net with this candidate Gross
+        const res = calculateUKNetIncome(
+            context.grossSalary,
+            context.grossDividends,
+            context.grossStatePension,
+            context.grossDBPension,
+            context.grossRentalProfit,
+            context.otherTaxableIncome,
+            mid,
+            context.pensionTaxFreePct,
+            context.inflationMultiplier
+        );
+
+        const currentNetAdded = (res.breakdown.netIncome || 0) - baselineNet;
+
+        if (Math.abs(currentNetAdded - targetNetDeficit) < 0.05) {
+            // Close enough (within 5p)
+            bestGross = mid;
+            bestNetDiff = currentNetAdded;
+            break;
+        }
+
+        if (currentNetAdded < targetNetDeficit) {
+            low = mid + 0.01;
+        } else {
+            bestGross = mid; // Keep this as a valid candidate that covers the need (maybe slightly over)
+            bestNetDiff = currentNetAdded;
+            high = mid - 0.01;
+        }
+        iterations++;
+    }
+
+    // Final clamp to available pot
+    if (bestGross > availablePot) {
+        bestGross = availablePot;
+        const finalRes = calculateUKNetIncome(
+            context.grossSalary,
+            context.grossDividends,
+            context.grossStatePension,
+            context.grossDBPension,
+            context.grossRentalProfit,
+            context.otherTaxableIncome,
+            bestGross,
+            context.pensionTaxFreePct,
+            context.inflationMultiplier
+        );
+        bestNetDiff = (finalRes.breakdown.netIncome || 0) - baselineNet;
+    }
+
+    return { gross: bestGross, net: bestNetDiff };
 };
 
 export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
@@ -193,9 +414,13 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
     });
 
     // Initialize Loan Balances map (id -> currentBalance)
+    // If loan startAge <= currentAge, initialize with balance (loan already active)
+    const currentAgeForInit = val(inputs.currentAge, 30);
     let loanBalances = new Map<string, number>();
     (inputs.loans || []).forEach(loan => {
-        loanBalances.set(loan.id, 0);
+        // If loan has already started, use actual balance; otherwise start at 0
+        const initialBalance = loan.startAge <= currentAgeForInit ? loan.balance : 0;
+        loanBalances.set(loan.id, initialBalance);
     });
 
     // State for One-off Lifecycle Events
@@ -243,17 +468,32 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         }
 
         // Add Additional Income (Multiple Sources + Legacy Support)
+        // Now also handles dividend income via taxAsDividend flag
         const additionalIncomes = inputs.additionalIncomes || [];
+        let grossDividends = 0;
 
-        // 1. Array Logic
+        // 1. Array Logic - split between regular income and dividends based on taxAsDividend flag
         if (additionalIncomes.length > 0) {
             additionalIncomes.forEach(inc => {
-                if (age >= inc.startAge && age < inc.endAge) {
+                if (age >= inc.startAge && age <= inc.endAge) {
+                    // Calculate amount with growth/inflation
+                    const yearsFromStart = age - inc.startAge;
                     let amount = inc.amount;
-                    if (inc.inflationLinked !== false) { // Default to true
+
+                    if (inc.growthRate !== undefined) {
+                        // Use explicit growth rate
+                        amount = amount * Math.pow(1 + inc.growthRate / 100, yearsFromStart);
+                    } else if (inc.inflationLinked !== false) {
+                        // Default to inflation-linked
                         amount = amount * inflationMultiplier;
                     }
-                    grossSalary += amount;
+
+                    // Route to correct income type based on tax treatment
+                    if (inc.taxAsDividend) {
+                        grossDividends += amount;
+                    } else {
+                        grossSalary += amount;
+                    }
                 }
             });
         }
@@ -268,21 +508,60 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
             }
         }
 
-        // B. Dividends
-        let grossDividends = 0;
-        if (isWorkingFullTime) {
-            grossDividends = val(inputs.dividendIncome, 0) * inflationMultiplier;
+        // B. Legacy single dividend value (for backwards compatibility)
+        if (val(inputs.dividendIncome, 0) > 0 && isWorkingFullTime) {
+            grossDividends += val(inputs.dividendIncome, 0) * inflationMultiplier;
         }
 
-        // C. Events (Income) - Separating Taxable vs Non-Taxable
+        // C. State Pension (calculate BEFORE tax so it can be taxed)
+        // Apply missing NI years reduction - minimum 10 qualifying years required for any pension
+        let grossStatePension = 0;
+        if (age >= statePensionAge) {
+            const missingYears = val(inputs.missingNIYears, 0);
+            const qualifyingYears = Math.max(0, 35 - missingYears);
+            // UK requires minimum 10 qualifying years for any state pension
+            if (qualifyingYears >= 10) {
+                const pensionFraction = qualifyingYears / 35;
+                const fullStatePension = val(inputs.statePension, 0);
+                grossStatePension = fullStatePension * pensionFraction * inflationMultiplier;
+            }
+        }
+
+        // D. Defined Benefit Pensions (calculate BEFORE tax so it can be taxed)
+        let grossDBPension = 0;
+        (inputs.dbPensions || []).forEach(db => {
+            if (age >= db.startAge) {
+                let amount = db.annualIncome;
+                if (db.inflationLinked !== false) {
+                    amount = amount * inflationMultiplier;
+                }
+                grossDBPension += amount;
+            }
+        });
+
+        // E. Rental Income (calculate profit BEFORE tax - gross rent minus costs)
+        let grossRentalIncome = 0;
+        let grossRentalProfit = 0;
+        (inputs.investmentProperties || []).forEach(prop => {
+            const rent = (prop.monthlyRent * 12) * inflationMultiplier;
+            const costs = ((prop.monthlyCost || 0) * 12) * inflationMultiplier;
+            grossRentalIncome += rent;
+            grossRentalProfit += Math.max(0, rent - costs);
+        });
+
+        // F. Events (Income) - Separating Taxable vs Non-Taxable
         let eventIncomeNet = 0;
         let eventIncomeTaxable = 0; // Goes to Income Tax stack
         let eventDividends = 0; // Goes to Dividend stack
+        let totalCGT = 0;
+        let cgtBasicRate = 0;
+        let cgtHigherRate = 0;
+        let cgtAllowanceUsed = 0;
 
         (inputs.events || []).forEach(e => {
             let isActive = false;
             if (e.isRecurring) {
-                const end = e.endAge || e.age;
+                const end = e.endAge || lifeExpectancy;
                 isActive = (age >= e.age && age <= end);
             } else {
                 isActive = (age === e.age);
@@ -296,8 +575,30 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
                 } else if (e.taxType === 'dividend') {
                     eventDividends += amount;
                 } else if (e.taxType === 'capital_gains') {
-                    // Simplified CGT: 20% flat deduction on the whole amount (assuming amount is gain)
-                    eventIncomeNet += amount * 0.80;
+                    // CGT with £3k allowance and 10%/20% rates
+                    const cgtAllowance = UK_TAX_CONSTANTS.CGT_ALLOWANCE * inflationMultiplier;
+                    cgtAllowanceUsed = Math.min(amount, cgtAllowance);
+                    const taxableGain = Math.max(0, amount - cgtAllowance);
+
+                    // Determine CGT rate based on total taxable income (simplified)
+                    const totalOtherIncome = grossSalary + grossStatePension + grossDBPension + grossRentalProfit;
+                    const basicRateCeiling = UK_TAX_CONSTANTS.PERSONAL_ALLOWANCE + (UK_TAX_CONSTANTS.BASIC_RATE_BAND_WIDTH * inflationMultiplier);
+
+                    if (totalOtherIncome < basicRateCeiling) {
+                        // Basic rate taxpayer - gains fill remaining basic band at 10%
+                        const basicBandRemaining = basicRateCeiling - totalOtherIncome;
+                        const gainInBasic = Math.min(taxableGain, basicBandRemaining);
+                        const gainInHigher = Math.max(0, taxableGain - gainInBasic);
+
+                        cgtBasicRate = gainInBasic * UK_TAX_CONSTANTS.CGT_BASIC;
+                        cgtHigherRate = gainInHigher * UK_TAX_CONSTANTS.CGT_HIGHER;
+                    } else {
+                        // Higher rate taxpayer - all gains at 20%
+                        cgtHigherRate = taxableGain * UK_TAX_CONSTANTS.CGT_HIGHER;
+                    }
+
+                    totalCGT = cgtBasicRate + cgtHigherRate;
+                    eventIncomeNet += amount - totalCGT;
                 } else {
                     // Tax Free (Gift, Inheritance, ISA maturity)
                     eventIncomeNet += amount;
@@ -306,49 +607,59 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         });
 
         // --- 3. Tax Calculation ---
-        // We combine Salary + Taxable Events for the "Salary" slot in calculator
-        // We use Dividends + Event Dividends for the "Dividend" slot
+        // All taxable income goes through the unified tax calculator
 
         let netSalaryIncome = 0;
         let netDividendIncome = 0;
+        let netStatePensionIncome = 0;
+        let netDBPensionIncome = 0;
+        let netRentalIncome = 0;
+        let taxBreakdown: Partial<TaxBreakdown> = {};
 
         if (inputs.isSalaryGross) {
-            // Pass inflationMultiplier to scale tax bands
-            const taxResult = calculateUKNetIncome(grossSalary, grossDividends + eventDividends, eventIncomeTaxable, inflationMultiplier);
+            // Pass all income sources to tax calculator (without withdrawal - not known yet)
+            const taxResult = calculateUKNetIncome(
+                grossSalary,
+                grossDividends + eventDividends,
+                grossStatePension,
+                grossDBPension,
+                grossRentalProfit,
+                eventIncomeTaxable,
+                0,  // No pension withdrawal known at this point
+                0,  // Tax-free percentage not relevant when withdrawal is 0
+                inflationMultiplier
+            );
+
             netSalaryIncome = taxResult.netSalary;
             netDividendIncome = taxResult.netDividends;
+
+            // Split pension income for reporting
+            const pensionRatio = grossStatePension / ((grossStatePension + grossDBPension) || 1);
+            netStatePensionIncome = taxResult.netPensionIncome * pensionRatio;
+            netDBPensionIncome = taxResult.netPensionIncome * (1 - pensionRatio);
+
+            netRentalIncome = taxResult.netRentalProfit;
+            taxBreakdown = taxResult.breakdown;
+
+            // Add CGT data to breakdown
+            taxBreakdown.cgtAllowanceUsed = cgtAllowanceUsed;
+            taxBreakdown.cgtBasicRate = cgtBasicRate;
+            taxBreakdown.cgtHigherRate = cgtHigherRate;
+            taxBreakdown.totalCGT = totalCGT;
+            taxBreakdown.totalTaxPaid = (taxBreakdown.totalTaxPaid || 0) + totalCGT;
         } else {
             // Assume input was already net (User selected 'Net' toggle)
-            // We add net events directly
             netSalaryIncome = grossSalary + eventIncomeTaxable;
             netDividendIncome = grossDividends + eventDividends;
+            netStatePensionIncome = grossStatePension;
+            netDBPensionIncome = grossDBPension;
+            netRentalIncome = grossRentalProfit;
         }
 
-        // --- 4. Other Income Streams (Post-Tax / Non-earned) ---
-
-        // State Pension
-        let statePensionIncome = 0;
-        if (age >= statePensionAge) {
-            statePensionIncome = val(inputs.statePension, 0) * inflationMultiplier;
-        }
-
-        // Defined Benefit Pensions (Final Salary)
-        let dbPensionIncome = 0;
-        (inputs.dbPensions || []).forEach(db => {
-            if (age >= db.startAge) {
-                let amount = db.annualIncome;
-                if (db.inflationLinked !== false) {
-                    amount = amount * inflationMultiplier;
-                }
-                dbPensionIncome += amount;
-            }
-        });
-
-        // Rental Income (BTL)
-        let rentalIncome = 0;
-        (inputs.investmentProperties || []).forEach(prop => {
-            rentalIncome += (prop.monthlyRent * 12) * inflationMultiplier;
-        });
+        // For backward compatibility, keep these names
+        const statePensionIncome = netStatePensionIncome;
+        const dbPensionIncome = netDBPensionIncome;
+        const rentalIncome = netRentalIncome;
 
         // --- 5. Spending & Expenses ---
 
@@ -356,9 +667,12 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         let generalSpending = val(inputs.annualSpending, 0) * inflationMultiplier;
         const taperAge = val(inputs.spendingTaperAge, 75);
         const taperRate = val(inputs.spendingTaperRate, 0);
-        if (age > taperAge) {
+        // Taper starts AT the specified age (first reduction at taperAge + 1)
+        if (age >= taperAge && taperRate > 0) {
             const yearsPastTaper = age - taperAge;
-            generalSpending = generalSpending * Math.pow(1 - taperRate / 100, yearsPastTaper);
+            // Clamp taper rate to prevent negative spending
+            const safeTaperRate = Math.min(taperRate, 100) / 100;
+            generalSpending = generalSpending * Math.pow(1 - safeTaperRate, yearsPastTaper);
         }
 
         // B. Housing
@@ -425,7 +739,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         (inputs.events || []).forEach(e => {
             let isActive = false;
             if (e.isRecurring) {
-                const end = e.endAge || e.age;
+                const end = e.endAge || lifeExpectancy;
                 isActive = (age >= e.age && age <= end);
             } else {
                 isActive = (age === e.age);
@@ -444,16 +758,25 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         let contribISAYear = 0;
         let contribGIAYear = 0;
         let contribPensionYear = 0;
+        let pensionTaxRelief = 0;
 
         if (isWorkingFullTime) {
             contribCashYear = (val(inputs.contribCash, 0) * 12) * inflationMultiplier;
             contribISAYear = (val(inputs.contribISA, 0) * 12) * inflationMultiplier;
             contribGIAYear = (val(inputs.contribGIA, 0) * 12) * inflationMultiplier;
-            contribPensionYear = ((val(inputs.contribPension, 0) + val(inputs.contribWorkplacePension, 0) + val(inputs.contribSIPP, 0)) * 12) * inflationMultiplier;
+
+            // Pension contribution with tax relief
+            // User enters what they pay (net), we add basic rate relief (25% gross-up)
+            // Note: All taxpayers get 20% basic rate relief added to pension pot automatically.
+            // Higher/additional rate taxpayers claim extra relief via self-assessment (personal benefit, not pension pot).
+            const userPensionContrib = ((val(inputs.contribPension, 0) + val(inputs.contribWorkplacePension, 0) + val(inputs.contribSIPP, 0)) * 12) * inflationMultiplier;
+            pensionTaxRelief = userPensionContrib * 0.25; // Basic rate relief (20% of gross = 25% of net)
+            contribPensionYear = userPensionContrib + pensionTaxRelief; // Gross amount going into pension
         }
 
-        const annualLimitPension = 60000 * inflationMultiplier;
-        const annualLimitISA = 20000 * inflationMultiplier;
+        // UK annual allowances are fixed by law, not inflated
+        const annualLimitPension = 60000;
+        const annualLimitISA = 20000;
 
         // --- 7. Pension Lump Sum ---
         let lumpSumToISA = 0;
@@ -554,6 +877,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         let withdrawalGIA = 0;
         let withdrawalPensionNet = 0;
         let withdrawalPensionGross = 0;
+        let withdrawalShadowPensionGross = 0;
 
         let withdrawalOrder: ('cash' | 'isa' | 'gia' | 'pension')[] = [];
         const canAccessPension = age >= pensionAccessAge;
@@ -573,19 +897,39 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
                 if (!canAccessPension) return;
                 const available = Math.max(0, potPension);
 
-                // Tax Logic
-                const currentTaxFreePct = hasTakenLumpSum ? 0 : (pensionTaxFreeCashVal / 100);
-                const taxRate = pensionTaxRateVal / 100;
-                const effectiveRetentionRate = currentTaxFreePct + ((1 - currentTaxFreePct) * (1 - taxRate));
-                const safeRetentionRate = effectiveRetentionRate > 0 ? effectiveRetentionRate : 0.01;
+                // Start of New Solver Logic
+                // Context for the solver
+                const context = {
+                    grossSalary,
+                    grossDividends: grossDividends + eventDividends,
+                    grossStatePension,
+                    grossDBPension,
+                    grossRentalProfit,
+                    otherTaxableIncome: eventIncomeTaxable,
+                    pensionTaxFreePct: hasTakenLumpSum ? 0 : (pensionTaxFreeCashVal / 100),
+                    inflationMultiplier
+                };
 
-                const grossNeeded = remainingDeficit / safeRetentionRate;
-                const takeGross = Math.min(available, grossNeeded);
-                const takeNet = takeGross * safeRetentionRate;
+                // Calculate SHADOW withdrawal (Benchmark)
+                // What we WOULD withdraw if we had the Shadow Pot balance
+                // This prevents the Shadow Pot from growing indefinitely if the Actual Pot runs out
+                const shadowRes = resolveGrossWithdrawalForTargetNet(
+                    remainingDeficit,
+                    context,
+                    Math.max(0, shadowPensionPot)
+                );
+                withdrawalShadowPensionGross += shadowRes.gross;
 
-                withdrawalPensionGross += takeGross;
-                withdrawalPensionNet += takeNet;
-                remainingDeficit -= takeNet;
+                // Calculate ACTUAL withdrawal
+                const { gross, net } = resolveGrossWithdrawalForTargetNet(
+                    remainingDeficit,
+                    context,
+                    available
+                );
+                withdrawalPensionGross += gross;
+                withdrawalPensionNet += net;
+                remainingDeficit -= net;
+                // End of New Solver Logic
             } else {
                 let available = 0;
                 if (potType === 'cash') available = Math.max(0, potCash);
@@ -603,7 +947,39 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
 
         withdrawalOrder.forEach(pot => withdrawFromPot(pot));
 
-        const shortfall = remainingDeficit > 1 ? remainingDeficit : 0;
+        // Use small threshold to handle floating-point rounding (not £1 which hides real shortfalls)
+        const shortfall = remainingDeficit > 0.01 ? remainingDeficit : 0;
+
+        // --- 9b. RECALCULATE TAX with pension withdrawal included ---
+        // This gives us the accurate tax breakdown for display purposes
+        if (inputs.isSalaryGross && withdrawalPensionGross > 0) {
+            // Determine the tax-free percentage for this withdrawal
+            // If lump sum already taken, all withdrawal is taxable
+            // If using drip feed, 25% of each withdrawal is tax-free
+            const withdrawalTaxFreePct = hasTakenLumpSum ? 0 : (pensionTaxFreeCashVal / 100);
+
+            const finalTaxResult = calculateUKNetIncome(
+                grossSalary,
+                grossDividends + eventDividends,
+                grossStatePension,
+                grossDBPension,
+                grossRentalProfit,
+                eventIncomeTaxable,
+                withdrawalPensionGross,
+                withdrawalTaxFreePct,
+                inflationMultiplier
+            );
+
+            // Update taxBreakdown with the correct values including withdrawal
+            taxBreakdown = finalTaxResult.breakdown;
+
+            // Re-add CGT data
+            taxBreakdown.cgtAllowanceUsed = cgtAllowanceUsed;
+            taxBreakdown.cgtBasicRate = cgtBasicRate;
+            taxBreakdown.cgtHigherRate = cgtHigherRate;
+            taxBreakdown.totalCGT = totalCGT;
+            taxBreakdown.totalTaxPaid = (taxBreakdown.totalTaxPaid || 0) + totalCGT;
+        }
 
         // --- 10. Bed and ISA ---
         if (inputs.maxISAFromGIA) {
@@ -628,9 +1004,17 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         }
 
         // --- 11. Apply Growth ---
-        const getGrowthFactor = (rate: number | undefined) => 1 + (val(rate, 0) / 100);
-        const getMidYearGrowthFactor = (rate: number | undefined) => Math.pow(1 + (val(rate, 0) / 100), 0.5);
+        // Clamp growth factor to minimum 0 to prevent NaN from negative square roots
+        const getGrowthFactor = (rate: number | undefined) => Math.max(0, 1 + (val(rate, 0) / 100));
+        const getMidYearGrowthFactor = (rate: number | undefined) => Math.sqrt(Math.max(0, 1 + (val(rate, 0) / 100)));
 
+        // Track Start Balances for Growth Calculation
+        const startPotCash = potCash;
+        const startPotISA = potISA;
+        const startPotGIA = potGIA;
+        const startPotPension = potPension;
+
+        // Apply Growth & Flows
         potCash = (potCash * getGrowthFactor(inputs.growthCash))
             + (contribCashYear * getMidYearGrowthFactor(inputs.growthCash))
             + (surplusToCash * getMidYearGrowthFactor(inputs.growthCash))
@@ -653,29 +1037,49 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
             + (surplusToPension * getMidYearGrowthFactor(netPensionGrowthRate))
             - (withdrawalPensionGross * getMidYearGrowthFactor(netPensionGrowthRate));
 
+        // Calculate Growth Amounts (EndBalance - StartBalance - NetFlows)
+        const netFlowCash = contribCashYear + surplusToCash - withdrawalCash;
+        const growthCashAmt = potCash - (startPotCash + netFlowCash);
+
+        const netFlowISA = contribISAYear + surplusToISA - withdrawalISA;
+        const growthISAAmt = potISA - (startPotISA + netFlowISA);
+
+        const netFlowGIA = contribGIAYear + surplusToGIA - withdrawalGIA;
+        const growthGIAAmt = potGIA - (startPotGIA + netFlowGIA);
+
+        const netFlowPension = contribPensionYear + surplusToPension - withdrawalPensionGross;
+        const growthPensionAmt = potPension - (startPotPension + netFlowPension);
+
         // --- 11a. Benchmark Calculation (Shadow Pot) ---
         // Simulate what the pension would be with Low Cost Fixed Fees (£240/yr)
         const benchmarkFee = 240 * inflationMultiplier;
         const grossPensionGrowth = val(inputs.growthPension, 5); // No % fee deduction
 
         // Apply same cashflows to benchmark, but different fee structure
-        // Note: We use the SAME withdrawal amount to see capital erosion impact,
-        // rather than recalculating sustainable withdrawal.
         shadowPensionPot = (shadowPensionPot * getGrowthFactor(grossPensionGrowth))
             + (contribPensionYear * getMidYearGrowthFactor(grossPensionGrowth))
             + (surplusToPension * getMidYearGrowthFactor(grossPensionGrowth))
-            - (withdrawalPensionGross * getMidYearGrowthFactor(grossPensionGrowth))
+            - (withdrawalShadowPensionGross * getMidYearGrowthFactor(grossPensionGrowth))
             - benchmarkFee;
 
         // Property Growth
         let totalPropertyValue = 0;
+        let totalPropertyGrowth = 0;
+
         (inputs.investmentProperties || []).forEach(p => {
             let currentVal = propertyBalances.get(p.id) || p.value;
             const gf = getGrowthFactor(p.growthRate);
-            currentVal = currentVal * gf;
-            propertyBalances.set(p.id, currentVal);
-            totalPropertyValue += currentVal;
+
+            const newVal = currentVal * gf;
+            const growth = newVal - currentVal;
+
+            propertyBalances.set(p.id, newVal);
+            totalPropertyValue += newVal;
+            totalPropertyGrowth += growth;
         });
+
+        // Sum Total Annual Investment Growth
+        const totalInvestmentGrowth = growthCashAmt + growthISAAmt + growthGIAAmt + growthPensionAmt + totalPropertyGrowth;
 
 
         // --- 12. Visualization Data Prep ---
@@ -744,7 +1148,45 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
             propertyValue: totalPropertyValue,
             liquidNetWorth: Math.max(0, potCash + potISA + potGIA),
             totalNetWorth: Math.max(0, potCash + potISA + potGIA + potPension + totalPropertyValue),
-            benchmarkPensionPot: Math.max(0, shadowPensionPot)
+            totalInvestmentGrowth,
+            benchmarkPensionPot: Math.max(0, shadowPensionPot),
+
+            // Tax Transparency Fields
+            pensionTaxRelief,
+            taxBreakdown: {
+                // Ensure all fields are populated with defaults for non-gross mode
+                grossSalary: taxBreakdown.grossSalary || grossSalary,
+                grossDividends: taxBreakdown.grossDividends || grossDividends,
+                grossStatePension: taxBreakdown.grossStatePension || grossStatePension,
+                grossDBPension: taxBreakdown.grossDBPension || grossDBPension,
+                grossRentalProfit: taxBreakdown.grossRentalProfit || grossRentalProfit,
+                grossPensionWithdrawal: taxBreakdown.grossPensionWithdrawal || 0,
+                grossOther: taxBreakdown.grossOther || 0,
+                totalGrossIncome: taxBreakdown.totalGrossIncome || (grossSalary + grossDividends + grossStatePension + grossDBPension + grossRentalProfit),
+                personalAllowanceUsed: taxBreakdown.personalAllowanceUsed || 0,
+                dividendAllowanceUsed: taxBreakdown.dividendAllowanceUsed || 0,
+                cgtAllowanceUsed: taxBreakdown.cgtAllowanceUsed || 0,
+                incomeInBasicBand: taxBreakdown.incomeInBasicBand || 0,
+                incomeInHigherBand: taxBreakdown.incomeInHigherBand || 0,
+                incomeInAdditionalBand: taxBreakdown.incomeInAdditionalBand || 0,
+                basicRateTax: taxBreakdown.basicRateTax || 0,
+                higherRateTax: taxBreakdown.higherRateTax || 0,
+                additionalRateTax: taxBreakdown.additionalRateTax || 0,
+                totalIncomeTax: taxBreakdown.totalIncomeTax || 0,
+                niMainRate: taxBreakdown.niMainRate || 0,
+                niHigherRate: taxBreakdown.niHigherRate || 0,
+                totalNI: taxBreakdown.totalNI || 0,
+                dividendBasicTax: taxBreakdown.dividendBasicTax || 0,
+                dividendHigherTax: taxBreakdown.dividendHigherTax || 0,
+                dividendAdditionalTax: taxBreakdown.dividendAdditionalTax || 0,
+                totalDividendTax: taxBreakdown.totalDividendTax || 0,
+                cgtBasicRate: taxBreakdown.cgtBasicRate || 0,
+                cgtHigherRate: taxBreakdown.cgtHigherRate || 0,
+                totalCGT: taxBreakdown.totalCGT || 0,
+                totalTaxPaid: taxBreakdown.totalTaxPaid || 0,
+                netIncome: taxBreakdown.netIncome || totalIncome,
+                effectiveTaxRate: taxBreakdown.effectiveTaxRate || 0,
+            } as TaxBreakdown,
         });
     }
 

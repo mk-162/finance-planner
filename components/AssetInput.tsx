@@ -108,7 +108,7 @@ export const AssetInput: React.FC<AssetInputProps> = ({
                     {/* Balance Input (Moved to Header) */}
                     <div className="relative">
                         <SimpleFormattedInput
-                            value={balance}
+                            value={localBalance}
                             onChange={onUpdateBalance}
                             prefix="£"
                             className="w-28 py-1 px-2 text-right font-bold text-slate-800 bg-white border border-slate-300 rounded focus:ring-2 focus:ring-blue-100 outline-none transition-shadow"
@@ -138,7 +138,7 @@ export const AssetInput: React.FC<AssetInputProps> = ({
                     type="range"
                     min={0}
                     max={sliderMax}
-                    step={Math.max(100, sliderMax / 1000)}
+                    step={type === 'pension' ? 1000 : Math.max(100, Math.round(sliderMax / 1000))}
                     value={localBalance}
                     onChange={handleBalanceSliderChange}
                     className={`w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-${colorClass}-600`}

@@ -75,7 +75,7 @@ interface CustomTooltipProps {
     events: FinancialEvent[];
     retirementAge: number;
     mortgageEndAge: number;
-    mode: 'cashflow' | 'assets';
+    mode: 'cashflow' | 'assets' | 'freedom';
     fullData: YearlyResult[];
 }
 
@@ -209,6 +209,45 @@ const CustomTooltip = ({ active, payload, label, events, retirementAge, mortgage
                                 color={COLORS.drawdownCash}
                             />
                         )}
+                    </div>
+                </div>
+            );
+        }
+
+        // -- FREEDOM MODE TOOLTIP --
+        if (mode === 'freedom') {
+            const gains = data.totalInvestmentGrowth || 0;
+            const expense = data.totalExpense;
+            const isFreedom = gains > expense;
+
+            return (
+                <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 shadow-xl rounded-sm text-sm z-50 min-w-[280px]">
+                    <div className="border-b border-slate-100 pb-2 mb-3 flex justify-between items-center">
+                        <span className="font-bold text-slate-800 text-lg">Age {currentAge}</span>
+                        <span className="text-slate-400 text-xs font-mono">{data.year}</span>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Passive Income</p>
+                            <TooltipRow label="Investment Gains" value={gains} color="#10b981" bold />
+                        </div>
+
+                        <div>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Lifestyle Cost</p>
+                            <TooltipRow label="Total Expenses" value={expense} color={COLORS.expenseLine} />
+                        </div>
+
+                        <div className={`p-3 rounded-lg border mt-2 ${isFreedom ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'}`}>
+                            <div className="flex justify-between items-center mb-1">
+                                <p className={`text-[10px] font-bold uppercase ${isFreedom ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                    {isFreedom ? 'Financial Freedom Achieved' : 'Gap to Freedom'}
+                                </p>
+                            </div>
+                            <div className={`text-xl font-bold font-mono py-1 ${isFreedom ? 'text-emerald-600' : 'text-slate-500'}`}>
+                                {isFreedom ? 'Surplus ' : 'Gap '}{formatCurrency(Math.abs(gains - expense))}
+                            </div>
+                        </div>
                     </div>
                 </div>
             );
@@ -404,6 +443,70 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
 
     const tooltipProps = { events, retirementAge, mortgageEndAge, mode, fullData: data };
 
+    if (mode === 'freedom') {
+        return (
+            <div className="flex flex-col h-full min-h-[400px]">
+                <div className="flex-1 w-full min-h-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
+                            <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
+                            <Tooltip content={<CustomTooltip {...tooltipProps} />} wrapperStyle={{ zIndex: 1000 }} />
+                            <Legend wrapperStyle={{ paddingTop: '10px' }} />
+
+                            {renderReferenceLines()}
+
+                            {/* Investment Gains Area/Line */}
+                            <defs>
+                                <linearGradient id="colorGains" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
+
+                            <Line
+                                type="monotone"
+                                dataKey="totalInvestmentGrowth"
+                                name="Investment Gains (Passive Income)"
+                                stroke="#10b981"
+                                strokeWidth={3}
+                                dot={false}
+                            />
+
+                            <Line
+                                type="step"
+                                dataKey="totalExpense"
+                                name="Total Expenses"
+                                stroke={COLORS.expenseLine}
+                                strokeWidth={2}
+                                strokeDasharray="4 4"
+                                dot={false}
+                            />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+
+                {/* Disclaimer Banner */}
+                <div className="mt-4 bg-blue-50 border border-blue-100 rounded-lg p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div className="text-xs text-blue-800 space-y-1">
+                        <p className="font-bold flex items-center gap-2">
+                            <span className="bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-extrabold">NOTE</span>
+                            Tax Implications
+                        </p>
+                        <p>
+                            This model shows gross investment growth. It does <strong>not</strong> account for taxes due on disposal (CGT)
+                            or withdrawal (Income Tax). Realized gains may be significantly lower.
+                        </p>
+                    </div>
+                    <button className="whitespace-nowrap px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition">
+                        Speak to an Advisor
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     if (mode === 'assets') {
         if (stacked) {
             return (
@@ -431,7 +534,7 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                             <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
                             <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
-                            <Tooltip content={<CustomTooltip {...tooltipProps} />} />
+                            <Tooltip content={<CustomTooltip {...tooltipProps} />} wrapperStyle={{ zIndex: 1000 }} />
                             <Legend wrapperStyle={{ paddingTop: '20px' }} />
 
                             {renderReferenceLines()}
@@ -452,7 +555,7 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                             <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
                             <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
-                            <Tooltip content={<CustomTooltip {...tooltipProps} />} />
+                            <Tooltip content={<CustomTooltip {...tooltipProps} />} wrapperStyle={{ zIndex: 1000 }} />
                             <Legend wrapperStyle={{ paddingTop: '20px' }} />
 
                             {renderReferenceLines()}
@@ -477,7 +580,7 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
                     <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
-                    <Tooltip content={<CustomTooltip {...tooltipProps} />} />
+                    <Tooltip content={<CustomTooltip {...tooltipProps} />} wrapperStyle={{ zIndex: 1000 }} />
                     <Legend content={<CustomCashflowLegend />} />
 
                     {renderReferenceLines()}

@@ -2,16 +2,17 @@
 
 import React, { useState } from 'react';
 import { FinancialEvent } from '../types';
-import { X, Plus, Trash2, Calendar, Repeat, ArrowRight, Wallet } from 'lucide-react';
+import { X, Plus, Trash2, Calendar, Repeat, ArrowRight, Wallet, CheckCircle } from 'lucide-react';
 
 interface EventModalProps {
     events: FinancialEvent[];
     onChange: (events: FinancialEvent[]) => void;
     isOpen: boolean;
     onClose: () => void;
+    editEvent?: FinancialEvent | null; // New prop
 }
 
-export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen, onClose }) => {
+export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen, onClose, editEvent }) => {
     const [activeTab, setActiveTab] = useState<'one-off' | 'recurring'>('one-off');
 
     const [newEvent, setNewEvent] = useState<Partial<FinancialEvent>>({
@@ -24,6 +25,28 @@ export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen
         isRecurring: false
     });
 
+    // Populate form on open/change of editEvent
+    React.useEffect(() => {
+        if (isOpen) {
+            if (editEvent) {
+                setNewEvent({ ...editEvent });
+                setActiveTab(editEvent.isRecurring ? 'recurring' : 'one-off');
+            } else {
+                // Reset to defaults for add mode
+                setNewEvent({
+                    name: '',
+                    age: 60,
+                    endAge: 63,
+                    amount: 10000,
+                    type: 'expense',
+                    taxType: 'tax_free',
+                    isRecurring: false
+                });
+                setActiveTab('one-off');
+            }
+        }
+    }, [isOpen, editEvent]);
+
     if (!isOpen) return null;
 
     const handleAdd = () => {
@@ -32,28 +55,45 @@ export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen
         const isRecurring = activeTab === 'recurring';
         const finalEndAge = isRecurring ? (newEvent.endAge || (newEvent.age! + 1)) : undefined;
 
-        const event: FinancialEvent = {
-            id: Math.random().toString(36).substr(2, 9),
-            name: newEvent.name,
+        const eventData: FinancialEvent = {
+            id: editEvent ? editEvent.id : Math.random().toString(36).substr(2, 9), // Keep ID if editing
+            name: newEvent.name || '',
             age: newEvent.age || 60,
             endAge: finalEndAge,
-            amount: newEvent.amount,
+            amount: newEvent.amount || 0,
             type: newEvent.type as 'expense' | 'income',
             isRecurring: isRecurring,
             taxType: newEvent.type === 'income' ? (newEvent.taxType || 'tax_free') : undefined
         };
-        onChange([...events, event]);
 
-        // Reset defaults
-        setNewEvent({
-            name: '',
-            age: 60,
-            endAge: 63,
-            amount: 10000,
-            type: 'expense',
-            taxType: 'tax_free',
-            isRecurring: false
-        });
+        if (editEvent) {
+            // Update existing
+            onChange(events.map(e => e.id === editEvent.id ? eventData : e));
+        } else {
+            // Create new
+            onChange([...events, eventData]);
+        }
+
+        if (!editEvent) {
+            // Only reset if creating (keep form if editing? No, close likely calls parent which closes modal)
+            setNewEvent({
+                name: '',
+                age: 60,
+                endAge: 63,
+                amount: 10000,
+                type: 'expense',
+                taxType: 'tax_free',
+                isRecurring: false
+            });
+        }
+        // Optional: Close modal automatically on save? The user might want to add multiple. 
+        // For edit, we definitely want to close or at least clear edit mode.
+        // But App.tsx controls modal state. 
+        // Let's assume user manually closes or we rely on parent to close. 
+        // Actually, for "Add", we usually reset. For "Update", we usually close.
+        if (editEvent) {
+            onClose();
+        }
     };
 
     const loadPreset = (name: string, type: 'expense' | 'income', recurring: boolean, years: number = 0, taxType?: 'tax_free' | 'taxable_income' | 'capital_gains' | 'dividend') => {
@@ -148,7 +188,7 @@ export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen
                             <select
                                 className="text-sm p-2 rounded border border-slate-300 bg-white"
                                 value={newEvent.type}
-                                onChange={e => setNewEvent({ ...newEvent, type: e.target.value as any })}
+                                onChange={e => setNewEvent({ ...newEvent, type: e.target.value as 'expense' | 'income' })}
                             >
                                 <option value="expense">Expense (-)</option>
                                 <option value="income">Income (+)</option>
@@ -214,9 +254,10 @@ export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen
 
                         <button
                             onClick={handleAdd}
-                            className="w-full bg-slate-900 text-white text-sm font-medium py-2 rounded hover:bg-slate-800 transition flex items-center justify-center gap-2 mt-2"
+                            className={`w-full text-white text-sm font-medium py-2 rounded transition flex items-center justify-center gap-2 mt-2 ${editEvent ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-900 hover:bg-slate-800'}`}
                         >
-                            <Plus size={16} /> Add {activeTab === 'recurring' ? 'Recurring' : 'Event'}
+                            {editEvent ? <CheckCircle size={16} /> : <Plus size={16} />}
+                            {editEvent ? 'Update Event' : `Add ${activeTab === 'recurring' ? 'Recurring' : 'Event'}`}
                         </button>
                     </div>
 

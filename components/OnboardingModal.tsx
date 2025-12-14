@@ -1,10 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { UserInputs } from '../types';
 import { AssetInput } from './AssetInput';
 import { SmartInput } from './SmartInput';
-import { calculateProjection, getStatePensionAge } from '../services/calculationEngine';
-import { ChevronRight, ChevronLeft, Check, Target, Wallet, TrendingUp, Home, Calendar, CreditCard, Building, ShieldCheck, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Target, Wallet, TrendingUp, Home, Calendar, CreditCard, Building, ShieldCheck, Plus, Trash2, Upload } from 'lucide-react';
 import { NumberInput, SimpleFormattedInput, SliderInput } from './InputSection';
 
 interface OnboardingModalProps {
@@ -12,14 +11,48 @@ interface OnboardingModalProps {
     onClose: () => void;
     initialInputs: UserInputs;
     onComplete: (inputs: UserInputs) => void;
+    onImport?: (inputs: UserInputs) => void;
 }
 
 const FULL_STATE_PENSION = 11502;
 
-export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClose, initialInputs, onComplete }) => {
+export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClose, initialInputs, onComplete, onImport }) => {
     const [step, setStep] = useState(0);
     const [data, setData] = useState<UserInputs>(initialInputs);
     const [paysFullNI, setPaysFullNI] = useState(true);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const content = e.target?.result as string;
+                const imported = JSON.parse(content);
+
+                // Check if it's a valid data file
+                if (imported.birthYear && imported.retirementAge) {
+                    if (onImport) {
+                        onImport(imported);
+                    } else {
+                        onComplete(imported);
+                    }
+                } else {
+                    alert('Invalid file format. Please select a valid RetirePlan data file.');
+                }
+            } catch (err) {
+                alert('Error reading file. Please ensure it is a valid JSON file.');
+            }
+        };
+        reader.readAsText(file);
+
+        // Reset the input so the same file can be selected again
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
 
     // Tab states for complex sections
     const [incomeTab, setIncomeTab] = useState<'salary' | 'rental' | 'other' | 'db'>('salary');
@@ -168,11 +201,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                         <input
                             type="range" min={1955} max={2005} step={1}
                             value={data.birthYear || 1984}
-                            onChange={(e) => {
-                                const year = Number(e.target.value);
-                                update('birthYear', year);
-                                update('statePensionAge', getStatePensionAge(year));
-                            }}
+                            onChange={(e) => update('birthYear', Number(e.target.value))}
                             className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                         />
                     </div>
@@ -360,6 +389,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                                             name: newRental.name,
                                             value: newRental.value || 0,
                                             monthlyRent: newRental.rent || 0,
+                                            monthlyCost: 0, // Default to 0, user can edit later
                                             growthRate: 3,
                                             hasMortgage: newRental.hasMortgage,
                                             mortgageBalance: newRental.hasMortgage ? newRental.mortgageBalance : undefined,
@@ -858,22 +888,42 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 bg-white border-t border-slate-100 flex justify-between items-center flex-shrink-0">
-                    <button
-                        onClick={handleBack}
-                        disabled={step === 0}
-                        className={`flex items-center gap-1 text-slate-500 font-medium hover:text-slate-800 px-3 py-2 rounded transition ${step === 0 ? 'opacity-0 pointer-events-none' : ''}`}
-                    >
-                        <ChevronLeft size={18} /> Back
-                    </button>
+                <div className="p-6 bg-white border-t border-slate-100 flex-shrink-0">
+                    <div className="flex justify-between items-center">
+                        <button
+                            onClick={handleBack}
+                            disabled={step === 0}
+                            className={`flex items-center gap-1 text-slate-500 font-medium hover:text-slate-800 px-3 py-2 rounded transition ${step === 0 ? 'opacity-0 pointer-events-none' : ''}`}
+                        >
+                            <ChevronLeft size={18} /> Back
+                        </button>
 
-                    <button
-                        onClick={handleNext}
-                        className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition flex items-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0"
-                    >
-                        {isLastStep ? 'Complete Setup' : 'Next Step'}
-                        {isLastStep ? <Check size={18} /> : <ChevronRight size={18} />}
-                    </button>
+                        <button
+                            onClick={handleNext}
+                            className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition flex items-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0"
+                        >
+                            {isLastStep ? 'Complete Setup' : 'Next Step'}
+                            {isLastStep ? <Check size={18} /> : <ChevronRight size={18} />}
+                        </button>
+                    </div>
+
+                    {/* Returning user import link */}
+                    <div className="mt-4 pt-4 border-t border-slate-100 text-center">
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileImport}
+                            accept=".json"
+                            className="hidden"
+                        />
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="text-xs text-slate-400 hover:text-blue-600 transition inline-flex items-center gap-1.5"
+                        >
+                            <Upload size={14} />
+                            Returning user? Import your saved data
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

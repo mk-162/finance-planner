@@ -1,34 +1,54 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { InvestmentProperty } from '../types';
-import { X, Plus, Trash2, Building } from 'lucide-react';
+import { X, Plus, Trash2, Building, CheckCircle } from 'lucide-react';
 
 interface PropertyModalProps {
     isOpen: boolean;
     onClose: () => void;
     properties: InvestmentProperty[];
     onUpdate: (props: InvestmentProperty[]) => void;
+    editProperty?: InvestmentProperty | null; // New prop
 }
 
 export const PropertyModal: React.FC<PropertyModalProps> = ({
-    isOpen, onClose, properties, onUpdate
+    isOpen, onClose, properties, onUpdate, editProperty
 }) => {
     const [newProp, setNewProp] = useState<Partial<InvestmentProperty>>({
         name: '', value: 250000, monthlyRent: 1200, monthlyCost: 0, growthRate: 3
     });
 
+    // Populate / Reset
+    useEffect(() => {
+        if (isOpen) {
+            if (editProperty) {
+                setNewProp({ ...editProperty });
+            } else {
+                setNewProp({ name: '', value: 250000, monthlyRent: 1200, monthlyCost: 0, growthRate: 3 });
+            }
+        }
+    }, [isOpen, editProperty]);
+
     if (!isOpen) return null;
 
     const handleAdd = () => {
         if (!newProp.name || !newProp.value) return;
-        onUpdate([...properties, {
-            id: Math.random().toString(36).substr(2, 9),
+
+        const propData: InvestmentProperty = {
+            id: editProperty ? editProperty.id : Math.random().toString(36).substr(2, 9),
             name: newProp.name,
             value: newProp.value,
             monthlyRent: newProp.monthlyRent || 0,
             monthlyCost: newProp.monthlyCost || 0,
             growthRate: newProp.growthRate || 0
-        }]);
-        setNewProp({ name: '', value: 250000, monthlyRent: 1200, monthlyCost: 0, growthRate: 3 });
+        };
+
+        if (editProperty) {
+            onUpdate(properties.map(p => p.id === editProperty.id ? propData : p));
+            onClose();
+        } else {
+            onUpdate([...properties, propData]);
+            setNewProp({ name: '', value: 250000, monthlyRent: 1200, monthlyCost: 0, growthRate: 3 });
+        }
     };
 
     return (
@@ -49,7 +69,7 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
                         Add buy-to-let or investment properties. Rental income (net of costs) will be included in your projections.
                     </p>
 
-                    <div className="bg-slate-50 p-4 rounded-sm mb-6 border border-slate-200">
+                    <div className="bg-slate-50 p-4 rounded-sm border border-slate-200 shadow-sm">
                         <div className="grid grid-cols-2 gap-3 mb-3">
                             <input
                                 type="text"
@@ -118,42 +138,13 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
                         </div>
                         <button
                             onClick={handleAdd}
-                            className="w-full bg-blue-600 text-white text-sm font-medium py-2.5 rounded-sm hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                            className={`w-full text-white text-sm font-medium py-2.5 rounded-sm transition flex items-center justify-center gap-2 ${editProperty ? 'bg-blue-700 hover:bg-blue-800' : 'bg-blue-600 hover:bg-blue-700'}`}
                         >
-                            <Plus size={16} /> Add Property
+                            {editProperty ? <CheckCircle size={16} /> : <Plus size={16} />}
+                            {editProperty ? 'Update Property' : 'Add Property'}
                         </button>
                     </div>
 
-                    <div className="space-y-2">
-                        {properties.length === 0 && (
-                            <p className="text-center text-slate-400 text-sm py-4 border border-dashed border-slate-200 rounded-sm">
-                                No investment properties added yet.
-                            </p>
-                        )}
-                        {properties.map(p => (
-                            <div key={p.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-sm shadow-sm">
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-blue-100 p-2 rounded-sm">
-                                        <Building size={16} className="text-blue-600" />
-                                    </div>
-                                    <div>
-                                        <div className="font-semibold text-slate-800 text-sm">{p.name}</div>
-                                        <div className="text-xs text-slate-500 flex gap-2">
-                                            <span>£{p.value.toLocaleString()} value</span>
-                                            <span className="text-slate-300">|</span>
-                                            <span>£{(p.monthlyRent - (p.monthlyCost || 0)).toLocaleString()}/mo net</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => onUpdate(properties.filter(x => x.id !== p.id))}
-                                    className="text-slate-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-sm transition"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
                 </div>
 
                 <div className="p-4 border-t border-slate-100 bg-slate-50">
@@ -161,7 +152,7 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
                         onClick={onClose}
                         className="w-full bg-slate-900 text-white py-2.5 rounded-sm font-medium hover:bg-slate-800 transition"
                     >
-                        Done
+                        Close
                     </button>
                 </div>
             </div>
