@@ -96,7 +96,7 @@ export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen
         }
     };
 
-    const loadPreset = (name: string, type: 'expense' | 'income', recurring: boolean, years: number = 0, taxType?: 'tax_free' | 'taxable_income' | 'capital_gains' | 'dividend') => {
+    const loadPreset = (name: string, type: 'expense' | 'income', recurring: boolean, years: number = 0, taxType?: 'tax_free' | 'taxable_income' | 'capital_gains' | 'dividend' | 'residential_property') => {
         setActiveTab(recurring ? 'recurring' : 'one-off');
         setNewEvent({
             name: name,
@@ -137,7 +137,7 @@ export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen
                             </label>
                             <div className="flex flex-wrap gap-2">
                                 <button onClick={() => loadPreset('Inheritance', 'income', false, 0, 'tax_free')} className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-xs rounded-sm text-green-700 border border-green-100 font-medium">💰 Inheritance</button>
-                                <button onClick={() => loadPreset('Sell Property', 'income', false, 0, 'capital_gains')} className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-xs rounded-sm text-green-700 border border-green-100 font-medium">🏠 Sell Property</button>
+                                <button onClick={() => loadPreset('Sell Property', 'income', false, 0, 'residential_property')} className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-xs rounded-sm text-green-700 border border-green-100 font-medium">🏠 Sell Property</button>
                                 <button onClick={() => loadPreset('Sell Shares/Assets', 'income', false, 0, 'capital_gains')} className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-xs rounded-sm text-green-700 border border-green-100 font-medium">📈 Sell Investments</button>
                                 <button onClick={() => loadPreset('Downsizing', 'income', false, 0, 'tax_free')} className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-xs rounded-sm text-green-700 border border-green-100 font-medium">🏡 Downsizing</button>
                                 <button onClick={() => loadPreset('Bonus / Lump Sum', 'income', false, 0, 'taxable_income')} className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-xs rounded-sm text-green-700 border border-green-100 font-medium">🎁 Bonus</button>
@@ -172,7 +172,7 @@ export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen
                                 onClick={() => setActiveTab('recurring')}
                                 className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition ${activeTab === 'recurring' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
                             >
-                                Recurring Range
+                                Yearly (age range)
                             </button>
                         </div>
 
@@ -218,6 +218,7 @@ export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen
                                         <option value="taxable_income">Income Tax (Bonus, Consultancy)</option>
                                         <option value="dividend">Dividend (Business Owner)</option>
                                         <option value="capital_gains">Capital Gains (Asset Disposal)</option>
+                                        <option value="residential_property">Residential Property (18%/24%)</option>
                                     </select>
                                 </div>
                             )}
@@ -294,7 +295,8 @@ export const EventModal: React.FC<EventModalProps> = ({ events, onChange, isOpen
                                                 {event.taxType === 'tax_free' ? 'Tax Free' :
                                                     event.taxType === 'taxable_income' ? 'Taxable Income' :
                                                         event.taxType === 'dividend' ? 'Dividend' :
-                                                            'Capital Gains'}
+                                                            event.taxType === 'capital_gains' ? 'Capital Gains' :
+                                                                'Property Tax'}
                                             </span>
                                         </div>
                                     )}

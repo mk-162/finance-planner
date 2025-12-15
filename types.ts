@@ -8,7 +8,7 @@ export interface FinancialEvent {
   type: 'expense' | 'income';
   isRecurring: boolean;
   endAge?: number; // If recurring, when does it stop?
-  taxType?: 'tax_free' | 'taxable_income' | 'capital_gains' | 'dividend'; // New: Tax Treatment
+  taxType?: 'tax_free' | 'taxable_income' | 'capital_gains' | 'dividend' | 'residential_property'; // New: Tax Treatment
 }
 
 export interface EducationEvent {
@@ -44,6 +44,8 @@ export interface InvestmentProperty {
   monthlyPayment?: number;
   isInterestOnly?: boolean; // simplified type
   endAge?: number;
+  sellAge?: number; // Planned disposal age
+  sellPrice?: number; // Optional override for sale value (in today's money)
 }
 
 export interface DefinedBenefitPension {
@@ -164,6 +166,7 @@ export interface UserInputs {
   growthGIA: number; // %
   growthPension: number; // %
   pensionFees?: number; // % Annual Fee
+  currentFeePercentage?: number; // New: Current investment fee percentage for comparison
 
   // Tax Assumptions
   pensionTaxFreeCash: number; // % (Default 25)
@@ -292,4 +295,7 @@ export interface YearlyResult {
   // Tax Transparency Fields
   pensionTaxRelief: number; // Value of tax relief on pension contributions
   taxBreakdown: TaxBreakdown; // Full breakdown for transparency modal
+
+  // New: Track transfers for visibility
+  totalTransferToISA?: number;
 }

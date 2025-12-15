@@ -49,17 +49,16 @@ export const TaxBreakdownModal: React.FC<TaxBreakdownModalProps> = ({
                                     Simplified Estimate Only
                                 </p>
                                 <p className="text-xs text-amber-700 mt-1">
-                                    This calculation is a rough approximation and does not account
-                                    for all complexities of UK tax regulations. It should not be
-                                    relied upon for financial decisions.
+                                    This calculation is a rough approximation. These figures may be inaccurate
+                                    and you should seek professional advice from an Independent Financial Adviser (IFA).
                                 </p>
                                 <a
-                                    href="https://www.gov.uk/check-income-tax"
+                                    href="https://www.unbiased.co.uk/"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-xs text-blue-600 underline mt-2 inline-flex items-center gap-1"
                                 >
-                                    Get proper advice from HMRC <ExternalLink size={12} />
+                                    Find an IFA using Unbiased <ExternalLink size={12} />
                                 </a>
                             </div>
                         </div>

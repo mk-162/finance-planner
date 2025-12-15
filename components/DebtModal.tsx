@@ -20,6 +20,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({ loans, onChange, isOpen, o
         monthlyPayment: 200,
         startAge: currentAge
     });
+    const [error, setError] = useState<string | null>(null);
 
     // Populate form on open/change of editLoan
     React.useEffect(() => {
@@ -42,7 +43,10 @@ export const DebtModal: React.FC<DebtModalProps> = ({ loans, onChange, isOpen, o
     if (!isOpen) return null;
 
     const handleAdd = () => {
-        if (!newLoan.name || !newLoan.balance || !newLoan.monthlyPayment) return;
+        if (!newLoan.name || !newLoan.balance || !newLoan.monthlyPayment) {
+            setError("Please fill in Name, Balance and Monthly Payment");
+            return;
+        }
 
         const loanData: Loan = {
             id: editLoan ? editLoan.id : Math.random().toString(36).substr(2, 9),
@@ -72,6 +76,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({ loans, onChange, isOpen, o
     };
 
     const loadPreset = (name: string, balance: number, rate: number, payment: number) => {
+        setError(null);
         setNewLoan({
             name,
             balance,
@@ -117,26 +122,38 @@ export const DebtModal: React.FC<DebtModalProps> = ({ loans, onChange, isOpen, o
                         <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Quick Presets</label>
                         <div className="flex flex-wrap gap-2">
                             <button onClick={() => loadPreset('Car Finance', 15000, 7.9, 350)} className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-xs rounded-full text-slate-700">🚗 Car Loan</button>
+                            <button onClick={() => setNewLoan({ name: 'Future Car', balance: 25000, interestRate: 6.5, monthlyPayment: 450, startAge: currentAge + 3 })} className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-xs rounded-full text-indigo-700">🔮 Future Car (+3y)</button>
+                            <button onClick={() => setNewLoan({ name: 'Future Maintenance', balance: 10000, interestRate: 0, monthlyPayment: 500, startAge: currentAge + 5 })} className="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-xs rounded-full text-emerald-700">🛠 Future Maintenance (+5y)</button>
                             <button onClick={() => loadPreset('Credit Card', 3000, 22.9, 150)} className="px-3 py-1 bg-red-50 hover:bg-red-100 text-xs rounded-full text-red-700">💳 Credit Card</button>
-                            <button onClick={() => loadPreset('Home Improvement', 20000, 4.5, 400)} className="px-3 py-1 bg-blue-50 hover:bg-blue-100 text-xs rounded-full text-blue-700">🛠 Loan</button>
                         </div>
                     </div>
 
                     {/* Add New Form */}
-                    <div className="bg-red-50/50 p-4 rounded-sm mb-6 border border-red-100 shadow-sm">
+                    <div className="bg-red-50/50 p-4 rounded-sm mb-6 border border-red-100 shadow-sm relative">
+
+                        {/* Error Message */}
+                        {error && (
+                            <div className="absolute -top-3 left-4 right-4 bg-red-100 text-red-700 text-xs px-3 py-1.5 rounded-full shadow-sm border border-red-200 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-1">
+                                <X size={12} className="cursor-pointer" onClick={() => setError(null)} />
+                                <span className="font-bold">Error:</span> {error}
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-2 gap-3 mb-3">
                             <input
                                 type="text"
                                 placeholder="Name (e.g. Car PCP)"
-                                className="col-span-2 text-sm p-2 rounded border border-slate-300 focus:ring-2 focus:ring-red-500 outline-none"
+                                className={`col-span-2 text-sm p-2 rounded border focus:ring-2 focus:ring-red-500 outline-none ${error && !newLoan.name ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
                                 value={newLoan.name}
-                                onChange={e => setNewLoan({ ...newLoan, name: e.target.value })}
+                                onChange={e => {
+                                    setNewLoan({ ...newLoan, name: e.target.value });
+                                    if (error) setError(null);
+                                }}
                             />
 
                             <div className="flex flex-col gap-1">
                                 <label className="text-[10px] uppercase font-bold text-slate-500">Total Balance</label>
-                                <div className="flex items-center bg-white border border-slate-300 rounded px-2">
+                                <div className={`flex items-center bg-white border rounded px-2 ${error && !newLoan.balance ? 'border-red-400 ring-1 ring-red-400' : 'border-slate-300'}`}>
                                     <span className="text-slate-500 text-xs mr-1 font-bold">£</span>
                                     <input
                                         type="number"
@@ -163,7 +180,7 @@ export const DebtModal: React.FC<DebtModalProps> = ({ loans, onChange, isOpen, o
 
                             <div className="flex flex-col gap-1">
                                 <label className="text-[10px] uppercase font-bold text-slate-500">Monthly Payment</label>
-                                <div className="flex items-center bg-white border border-slate-300 rounded px-2">
+                                <div className={`flex items-center bg-white border rounded px-2 ${error && !newLoan.monthlyPayment ? 'border-red-400 ring-1 ring-red-400' : 'border-slate-300'}`}>
                                     <span className="text-slate-500 text-xs mr-1 font-bold">£</span>
                                     <input
                                         type="number"

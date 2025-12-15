@@ -30,6 +30,7 @@ export interface BrokerPlatform {
     restrictions: string;
     entryFee: number;
     exitFee: number;
+    affiliateUrl?: string;
 }
 
 export const BROKER_PLATFORMS: BrokerPlatform[] = [
@@ -52,6 +53,7 @@ export const BROKER_PLATFORMS: BrokerPlatform[] = [
         restrictions: 'ETFs only',
         entryFee: 0,
         exitFee: 0,
+        affiliateUrl: 'https://investengine.com',
     },
     {
         id: 'prosper',
@@ -272,6 +274,7 @@ export const BROKER_PLATFORMS: BrokerPlatform[] = [
         restrictions: '',
         entryFee: 0,
         exitFee: 0,
+        affiliateUrl: 'https://www.trading212.com',
     },
     {
         id: 'dodl',

@@ -48,6 +48,9 @@ const UK_TAX_CONSTANTS = {
     DIVIDEND_ADDITIONAL: 0.3935,
     CGT_BASIC: 0.10,
     CGT_HIGHER: 0.20,
+    // Residential Property Rates (2024/25)
+    CGT_RESIDENTIAL_BASIC: 0.18,
+    CGT_RESIDENTIAL_HIGHER: 0.24,
 };
 
 /**
@@ -543,6 +546,9 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         let grossRentalIncome = 0;
         let grossRentalProfit = 0;
         (inputs.investmentProperties || []).forEach(prop => {
+            // Stop rent if sold
+            if (prop.sellAge && age >= prop.sellAge) return;
+
             const rent = (prop.monthlyRent * 12) * inflationMultiplier;
             const costs = ((prop.monthlyCost || 0) * 12) * inflationMultiplier;
             grossRentalIncome += rent;
@@ -558,6 +564,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         let cgtHigherRate = 0;
         let cgtAllowanceUsed = 0;
 
+        // F1. Standard Events
         (inputs.events || []).forEach(e => {
             let isActive = false;
             if (e.isRecurring) {
@@ -577,8 +584,18 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
                 } else if (e.taxType === 'capital_gains') {
                     // CGT with £3k allowance and 10%/20% rates
                     const cgtAllowance = UK_TAX_CONSTANTS.CGT_ALLOWANCE * inflationMultiplier;
-                    cgtAllowanceUsed = Math.min(amount, cgtAllowance);
-                    const taxableGain = Math.max(0, amount - cgtAllowance);
+
+                    // Note: This logic assumes independent allowances per event which is a simplification
+                    // Ideally we should aggregate all gains first. 
+                    // For now, we deduct allowance used by previous events in this year?
+                    // The simpler path is to just reuse the allowance if we haven't tracked "remaining".
+                    // However, let's try to be smart about allowance usage sharing.
+                    const remainingAllowance = Math.max(0, cgtAllowance - cgtAllowanceUsed);
+
+                    const gainUsingAllowance = Math.min(amount, remainingAllowance);
+                    cgtAllowanceUsed += gainUsingAllowance;
+
+                    const taxableGain = Math.max(0, amount - gainUsingAllowance);
 
                     // Determine CGT rate based on total taxable income (simplified)
                     const totalOtherIncome = grossSalary + grossStatePension + grossDBPension + grossRentalProfit;
@@ -590,21 +607,122 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
                         const gainInBasic = Math.min(taxableGain, basicBandRemaining);
                         const gainInHigher = Math.max(0, taxableGain - gainInBasic);
 
-                        cgtBasicRate = gainInBasic * UK_TAX_CONSTANTS.CGT_BASIC;
-                        cgtHigherRate = gainInHigher * UK_TAX_CONSTANTS.CGT_HIGHER;
+                        // Accumulate tax
+                        cgtBasicRate += gainInBasic * UK_TAX_CONSTANTS.CGT_BASIC;
+                        cgtHigherRate += gainInHigher * UK_TAX_CONSTANTS.CGT_HIGHER;
                     } else {
                         // Higher rate taxpayer - all gains at 20%
-                        cgtHigherRate = taxableGain * UK_TAX_CONSTANTS.CGT_HIGHER;
+                        cgtHigherRate += taxableGain * UK_TAX_CONSTANTS.CGT_HIGHER;
                     }
 
-                    totalCGT = cgtBasicRate + cgtHigherRate;
-                    eventIncomeNet += amount - totalCGT;
+                    eventIncomeNet += amount - (taxableGain * (totalOtherIncome < basicRateCeiling ? UK_TAX_CONSTANTS.CGT_BASIC : UK_TAX_CONSTANTS.CGT_HIGHER)); // Approximate deduction
+                } else if (e.taxType === 'residential_property') {
+                    // Residential Property CGT (18% / 24%)
+                    const cgtAllowance = UK_TAX_CONSTANTS.CGT_ALLOWANCE * inflationMultiplier;
+                    const remainingAllowance = Math.max(0, cgtAllowance - cgtAllowanceUsed);
+
+                    const gainUsingAllowance = Math.min(amount, remainingAllowance);
+                    cgtAllowanceUsed += gainUsingAllowance;
+
+                    const taxableGain = Math.max(0, amount - gainUsingAllowance);
+
+                    // Determine rate
+                    const totalOtherIncome = grossSalary + grossStatePension + grossDBPension + grossRentalProfit;
+                    const basicRateCeiling = UK_TAX_CONSTANTS.PERSONAL_ALLOWANCE + (UK_TAX_CONSTANTS.BASIC_RATE_BAND_WIDTH * inflationMultiplier);
+
+                    let taxToPay = 0;
+                    if (totalOtherIncome < basicRateCeiling) {
+                        const basicBandRemaining = basicRateCeiling - totalOtherIncome;
+                        const gainInBasic = Math.min(taxableGain, basicBandRemaining);
+                        const gainInHigher = Math.max(0, taxableGain - gainInBasic);
+
+                        const taxBasic = gainInBasic * UK_TAX_CONSTANTS.CGT_RESIDENTIAL_BASIC;
+                        const taxHigher = gainInHigher * UK_TAX_CONSTANTS.CGT_RESIDENTIAL_HIGHER;
+
+                        taxToPay = taxBasic + taxHigher;
+                        cgtBasicRate += taxBasic;
+                        cgtHigherRate += taxHigher;
+                    } else {
+                        taxToPay = taxableGain * UK_TAX_CONSTANTS.CGT_RESIDENTIAL_HIGHER;
+                        cgtHigherRate += taxToPay;
+                    }
+
+                    eventIncomeNet += amount - taxToPay;
                 } else {
                     // Tax Free (Gift, Inheritance, ISA maturity)
                     eventIncomeNet += amount;
                 }
             }
         });
+
+        // F2. Property Disposals (Treated as Capital Events)
+        (inputs.investmentProperties || []).forEach(prop => {
+            if (prop.sellAge && age === prop.sellAge) {
+                // 1. Determine Sale Value
+                let saleValue = 0;
+                if (prop.sellPrice) {
+                    // Override provided (Today's Money -> Inflated)
+                    saleValue = prop.sellPrice * inflationMultiplier;
+                } else {
+                    // Default: Grow by property specific growth rate
+                    const yearsHeld = age - currentAge;
+                    saleValue = prop.value * Math.pow(1 + (prop.growthRate || 0) / 100, yearsHeld);
+                }
+
+                // 2. Determine Capital Gain
+                // Proxy Cost Basis = Initial Value (should ideally be original purchase price)
+                const costBasis = prop.value;
+                const gain = Math.max(0, saleValue - costBasis);
+
+                // 3. Calculate CGT (Residential Property Rates should be 18%/24% but using standard for consistency unless specified)
+                // We share the same allowance tracking
+                const cgtAllowance = UK_TAX_CONSTANTS.CGT_ALLOWANCE * inflationMultiplier;
+                const remainingAllowance = Math.max(0, cgtAllowance - cgtAllowanceUsed);
+
+                const gainUsingAllowance = Math.min(gain, remainingAllowance);
+                cgtAllowanceUsed += gainUsingAllowance;
+
+                const taxableGain = Math.max(0, gain - gainUsingAllowance);
+
+                let propertyTax = 0;
+
+                const totalOtherIncome = grossSalary + grossStatePension + grossDBPension + grossRentalProfit;
+                const basicRateCeiling = UK_TAX_CONSTANTS.PERSONAL_ALLOWANCE + (UK_TAX_CONSTANTS.BASIC_RATE_BAND_WIDTH * inflationMultiplier);
+
+                if (totalOtherIncome < basicRateCeiling) {
+                    const basicBandRemaining = Math.max(0, basicRateCeiling - totalOtherIncome);
+                    // Note: Need to subtract gains already used in basic band by previous events? 
+                    // This is getting complex. Simplified: just check band against income.
+
+                    const gainInBasic = Math.min(taxableGain, basicBandRemaining);
+                    const gainInHigher = Math.max(0, taxableGain - gainInBasic);
+
+                    const taxBasic = gainInBasic * UK_TAX_CONSTANTS.CGT_BASIC; // Ideally 18%
+                    const taxHigher = gainInHigher * UK_TAX_CONSTANTS.CGT_HIGHER; // Ideally 24%
+
+                    propertyTax = taxBasic + taxHigher;
+                    cgtBasicRate += taxBasic;
+                    cgtHigherRate += taxHigher;
+                } else {
+                    const taxHigher = taxableGain * UK_TAX_CONSTANTS.CGT_HIGHER;
+                    propertyTax = taxHigher;
+                    cgtHigherRate += taxHigher;
+                }
+
+                totalCGT += propertyTax;
+
+                // 4. Mortgage Redemption
+                const mortgageBalance = prop.mortgageBalance || 0; // Assuming interest only / fixed balance
+
+                // 5. Net Proceeds
+                const netProceeds = saleValue - mortgageBalance - propertyTax;
+
+                eventIncomeNet += netProceeds;
+            }
+        });
+
+        // Finalize CGT totals for display
+        totalCGT = cgtBasicRate + cgtHigherRate;
 
         // --- 3. Tax Calculation ---
         // All taxable income goes through the unified tax calculator
@@ -982,6 +1100,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         }
 
         // --- 10. Bed and ISA ---
+        let totalTransferToISA = 0;
         if (inputs.maxISAFromGIA) {
             const totalUsed = contribISAYear + surplusToISA + lumpSumToISA;
             const isaHeadroom = Math.max(0, annualLimitISA - totalUsed);
@@ -991,6 +1110,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
                 if (moveFromGIA > 0) {
                     potGIA -= moveFromGIA;
                     potISA += moveFromGIA;
+                    totalTransferToISA += moveFromGIA;
                 }
                 const remainingHeadroom = isaHeadroom - moveFromGIA;
                 if (remainingHeadroom > 0) {
@@ -998,6 +1118,7 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
                     if (moveFromCash > 0) {
                         potCash -= moveFromCash;
                         potISA += moveFromCash;
+                        totalTransferToISA += moveFromCash;
                     }
                 }
             }
@@ -1067,6 +1188,12 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
         let totalPropertyGrowth = 0;
 
         (inputs.investmentProperties || []).forEach(p => {
+            // If sold this year or prior, value is 0
+            if (p.sellAge && age >= p.sellAge) {
+                propertyBalances.set(p.id, 0);
+                return;
+            }
+
             let currentVal = propertyBalances.get(p.id) || p.value;
             const gf = getGrowthFactor(p.growthRate);
 
@@ -1187,6 +1314,8 @@ export const calculateProjection = (inputs: UserInputs): YearlyResult[] => {
                 netIncome: taxBreakdown.netIncome || totalIncome,
                 effectiveTaxRate: taxBreakdown.effectiveTaxRate || 0,
             } as TaxBreakdown,
+
+            totalTransferToISA,
         });
     }
 

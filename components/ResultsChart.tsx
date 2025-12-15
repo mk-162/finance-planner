@@ -37,6 +37,8 @@ interface ResultsChartProps {
     mortgageEndAge: number;
     events: FinancialEvent[];
     stacked?: boolean;
+    onToggleVisibility?: (key: keyof AssetVisibility) => void;
+    onToggleStacked?: () => void;
 }
 
 const COLORS = {
@@ -60,6 +62,7 @@ const COLORS = {
     shortfall: '#ef4444', // red-500
     expenseLine: '#1e293b' // slate-800
 };
+
 
 const formatCurrency = (value: number) => {
     if (value >= 1000000) return `£${(value / 1000000).toFixed(2)}m`;
@@ -113,7 +116,7 @@ const AssetTooltipRow = ({ label, value, prevValue, color }: { label: string, va
                 <span className="text-slate-600 font-medium">{label}</span>
             </div>
             <div className="flex items-center gap-3">
-                {hasPrev && !isZero && (
+                {hasPrev && !isZero && Math.round(value) > 0 && (
                     <div className={`flex items-center text-[10px] font-bold ${isPositive ? 'text-emerald-600' : 'text-red-500'}`}>
                         {isPositive ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
                         {Math.abs(change).toFixed(1)}%
@@ -347,7 +350,16 @@ const CustomTooltip = ({ active, payload, label, events, retirementAge, mortgage
 
                             <div className="space-y-1 mt-2 pt-2 border-t border-black/5">
                                 {data.totalSavedToPension > 0 && <TooltipRow label="Pension" value={data.totalSavedToPension} color={COLORS.savedPension} />}
-                                {data.totalSavedToISA > 0 && <TooltipRow label="ISA" value={data.totalSavedToISA} color={COLORS.savedISA} />}
+
+                                {(data.totalSavedToISA > 0 || (data.totalTransferToISA && data.totalTransferToISA > 0)) && (
+                                    <>
+                                        {data.totalSavedToISA > 0 && <TooltipRow label="ISA" value={data.totalSavedToISA} color={COLORS.savedISA} />}
+                                        {data.totalTransferToISA && data.totalTransferToISA > 0 && (
+                                            <TooltipRow label="ISA (Transfer)" value={data.totalTransferToISA} color={COLORS.savedISA} />
+                                        )}
+                                    </>
+                                )}
+
                                 {data.totalSavedToGIA > 0 && <TooltipRow label="GIA" value={data.totalSavedToGIA} color={COLORS.savedGIA} />}
                                 {data.totalSavedToCash > 0 && <TooltipRow label="Cash" value={data.totalSavedToCash} color={COLORS.savedCash} />}
                             </div>
@@ -384,6 +396,10 @@ const CustomCashflowLegend = () => {
                 <div className="flex flex-wrap items-center gap-3 sm:gap-6">
                     <LegendItem color={COLORS.savedPension} label="Pension" />
                     <LegendItem color={COLORS.savedISA} label="ISA" />
+                    <div className="flex items-center gap-1.5 min-w-[70px]">
+                        <div className="w-3 h-3 rounded-sm" style={{ background: `repeating-linear-gradient(45deg, ${COLORS.savedISA}, ${COLORS.savedISA} 2px, #fff 2px, #fff 4px)` }}></div>
+                        <span className="text-[10px] sm:text-xs text-slate-600 font-medium whitespace-nowrap">Bed & ISA</span>
+                    </div>
                     <LegendItem color={COLORS.savedGIA} label="Trading" />
                     <LegendItem color={COLORS.savedCash} label="Cash" />
                 </div>
@@ -417,6 +433,79 @@ const CustomCashflowLegend = () => {
     );
 };
 
+// --- Custom Asset Legend Component ---
+const CustomAssetLegend = ({
+    assetVisibility,
+    onToggleVisibility,
+    stacked,
+    onToggleStacked
+}: {
+    assetVisibility: AssetVisibility,
+    onToggleVisibility?: (key: keyof AssetVisibility) => void,
+    stacked: boolean,
+    onToggleStacked?: () => void
+}) => {
+    return (
+        <div className="mt-4 px-2 flex flex-col md:flex-row md:items-center justify-between gap-4 border-t border-slate-100 pt-3">
+
+            {/* Legend Items (Left) */}
+            <div className="flex flex-wrap items-center gap-3 sm:gap-6">
+                {!stacked && <LegendItem color="#1e293b" label="Total Wealth" dashed />}
+                <LegendItem color="#eab308" label="Pension" />
+                <LegendItem color="#6366f1" label="ISA" />
+                <LegendItem color="#10b981" label="Trading" />
+                <LegendItem color="#a3e635" label="Cash" />
+            </div>
+
+            {/* Link Controls (Right) */}
+            {onToggleVisibility && onToggleStacked && (
+                <div className="flex items-center gap-3 bg-white px-3 py-1.5 border border-slate-200 rounded-xl shadow-sm whitespace-nowrap overflow-x-auto">
+                    <button
+                        onClick={onToggleStacked}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-medium text-slate-700 hover:bg-slate-100 transition shadow-sm mr-2"
+                    >
+                        {/* Icons not imported here, reusing text or adding imports if needed, but for now simple text/svg or pass icons? 
+                            I will just use text or simple shapes to avoid import mess if icons aren't available in this scope. 
+                            Actually lucide-react icons are imported at top.
+                        */}
+                        <div className={`w-3 h-3 border-2 border-current rounded-sm ${stacked ? 'border-b-4' : ''}`}></div>
+                        {stacked ? 'Stacked' : 'Lines'}
+                    </button>
+                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
+                    <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase mr-1">Show:</span>
+
+                    {!stacked && (
+                        <label className="flex items-center gap-1.5 cursor-pointer text-[10px] sm:text-xs font-medium text-slate-700 select-none">
+                            <input type="checkbox" checked={assetVisibility.total} onChange={() => onToggleVisibility('total')} className="rounded text-slate-800 focus:ring-slate-800" />
+                            <span>Total</span>
+                        </label>
+                    )}
+
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] sm:text-xs font-medium text-yellow-600 select-none">
+                        <input type="checkbox" checked={assetVisibility.pension} onChange={() => onToggleVisibility('pension')} className="rounded text-yellow-600 focus:ring-yellow-600" />
+                        <span>Pension</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] sm:text-xs font-medium text-indigo-600 select-none">
+                        <input type="checkbox" checked={assetVisibility.isa} onChange={() => onToggleVisibility('isa')} className="rounded text-indigo-600 focus:ring-indigo-600" />
+                        <span>ISA</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] sm:text-xs font-medium text-emerald-600 select-none">
+                        <input type="checkbox" checked={assetVisibility.gia} onChange={() => onToggleVisibility('gia')} className="rounded text-emerald-600 focus:ring-emerald-600" />
+                        <span>GIA</span>
+                    </label>
+
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] sm:text-xs font-medium text-lime-600 select-none">
+                        <input type="checkbox" checked={assetVisibility.cash} onChange={() => onToggleVisibility('cash')} className="rounded text-lime-600 focus:ring-lime-600" />
+                        <span>Cash</span>
+                    </label>
+                </div>
+            )}
+        </div>
+    );
+};
+
 export const ResultsChart: React.FC<ResultsChartProps> = ({
     data,
     mode,
@@ -425,7 +514,9 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
     retirementAge,
     mortgageEndAge,
     events,
-    stacked = true
+    stacked = true,
+    onToggleVisibility,
+    onToggleStacked
 }) => {
 
     const renderReferenceLines = () => (
@@ -508,6 +599,8 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
     }
 
     if (mode === 'assets') {
+        const legendProps = { assetVisibility, onToggleVisibility, stacked, onToggleStacked };
+
         if (stacked) {
             return (
                 <div className="w-full h-full min-h-[400px]">
@@ -535,7 +628,7 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
                             <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
                             <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
                             <Tooltip content={<CustomTooltip {...tooltipProps} />} wrapperStyle={{ zIndex: 1000 }} />
-                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                            <Legend content={<CustomAssetLegend {...legendProps} />} />
 
                             {renderReferenceLines()}
 
@@ -556,7 +649,7 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
                             <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
                             <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
                             <Tooltip content={<CustomTooltip {...tooltipProps} />} wrapperStyle={{ zIndex: 1000 }} />
-                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                            <Legend content={<CustomAssetLegend {...legendProps} />} />
 
                             {renderReferenceLines()}
 
@@ -577,6 +670,12 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
         <div className="w-full h-full min-h-[400px]">
             <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                    <defs>
+                        <pattern id="diagonalHatch" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                            <rect width="4" height="8" transform="translate(0,0)" fill={COLORS.savedISA} opacity="0.4" />
+                            <rect width="4" height="8" transform="translate(4,0)" fill={COLORS.savedISA} opacity="0.9" />
+                        </pattern>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="age" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#cbd5e1' }} />
                     <YAxis tickFormatter={formatCurrency} tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} axisLine={false} />
@@ -612,6 +711,7 @@ export const ResultsChart: React.FC<ResultsChartProps> = ({
           */}
                     <Bar dataKey="totalSavedToPension" name="Saved to Pension" stackId="a" fill={COLORS.savedPension} radius={[2, 2, 0, 0]} />
                     <Bar dataKey="totalSavedToISA" name="Saved to ISA" stackId="a" fill={COLORS.savedISA} radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="totalTransferToISA" name="ISA Transfer" stackId="a" fill="url(#diagonalHatch)" stroke={COLORS.savedISA} strokeWidth={1} radius={[2, 2, 0, 0]} />
                     <Bar dataKey="totalSavedToGIA" name="Saved to GIA" stackId="a" fill={COLORS.savedGIA} radius={[2, 2, 0, 0]} />
                     <Bar dataKey="totalSavedToCash" name="Saved to Cash" stackId="a" fill={COLORS.savedCash} radius={[2, 2, 0, 0]} />
 

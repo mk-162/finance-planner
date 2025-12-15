@@ -1,0 +1,151 @@
+{
+  "version": 2,
+  "exportedAt": "2025-12-14T23:42:58.294Z",
+  "scenarios": [
+    {
+      "id": "1",
+      "name": "Master Plan",
+      "data": {
+        "birthYear": 1975,
+        "currentAge": 40,
+        "retirementAge": 51,
+        "hasSemiRetirement": false,
+        "semiRetirementAge": 65,
+        "semiRetirementIncome": 20000,
+        "pensionAccessAge": 57,
+        "lifeExpectancy": 90,
+        "currentSalary": 52000,
+        "dividendIncome": 0,
+        "hasSideHustle": true,
+        "additionalIncome": 0,
+        "isSalaryGross": true,
+        "salaryGrowth": 1.5,
+        "statePension": 11502,
+        "statePensionAge": 67,
+        "missingNIYears": 0,
+        "housingMode": "mortgage",
+        "mortgages": [
+          {
+            "id": "ru12mtwqe",
+            "name": "Main Home",
+            "balance": 100000,
+            "interestRate": 4.5,
+            "monthlyPayment": 1000,
+            "type": "interest_only",
+            "chargeType": "first",
+            "endAge": 57
+          }
+        ],
+        "mortgageType": "repayment",
+        "mortgageRateType": "fixed",
+        "mortgagePayment": 1200,
+        "mortgageEndAge": 55,
+        "mortgageFinalPayment": 0,
+        "mortgageInterestRate": 3.5,
+        "rentAmount": 1500,
+        "rentInflation": 3,
+        "savingsCash": 94000,
+        "savingsISA": 107500,
+        "savingsGIA": 33750,
+        "savingsPension": 0,
+        "contribCash": 0,
+        "contribISA": 0,
+        "contribGIA": 0,
+        "contribPension": 0,
+        "surplusAllocationOrder": [
+          "isa",
+          "gia",
+          "pension",
+          "cash"
+        ],
+        "drawdownStrategy": "tax_efficient_bridge",
+        "maxISAFromGIA": true,
+        "pensionLumpSumMode": "upfront",
+        "pensionLumpSumDestination": "cash",
+        "annualSpending": 36000,
+        "spendingTaperAge": 70,
+        "spendingTaperRate": 0.5,
+        "inflation": 2.5,
+        "growthCash": 4.3,
+        "growthISA": 5.5,
+        "growthGIA": 5.1,
+        "growthPension": 10,
+        "pensionTaxFreeCash": 25,
+        "pensionTaxRate": 20,
+        "events": [
+          {
+            "id": "4pvocizy0",
+            "name": "Wedding",
+            "age": 60,
+            "amount": 25000,
+            "type": "expense",
+            "isRecurring": false
+          },
+          {
+            "id": "ps6dmfc80",
+            "name": "New Car",
+            "age": 55,
+            "amount": 25000,
+            "type": "expense",
+            "isRecurring": false
+          },
+          {
+            "id": "57ncxyfzq",
+            "name": "Inheritance",
+            "age": 60,
+            "amount": 50000,
+            "type": "income",
+            "isRecurring": false,
+            "taxType": "tax_free"
+          },
+          {
+            "id": "owl12w5v1",
+            "name": "Healthcare / Care Costs",
+            "age": 80,
+            "amount": 15000,
+            "type": "expense",
+            "isRecurring": true,
+            "endAge": 90,
+            "taxType": "tax_free"
+          }
+        ],
+        "loans": [
+          {
+            "id": "ckbikdxts",
+            "name": "Car Finance",
+            "balance": 15000,
+            "interestRate": 7.9,
+            "monthlyPayment": 350,
+            "startAge": 50
+          },
+          {
+            "id": "jfuwt5yoq",
+            "name": "New roof",
+            "balance": 5000,
+            "interestRate": 5,
+            "monthlyPayment": 300,
+            "startAge": 70
+          }
+        ],
+        "investmentProperties": [],
+        "dbPensions": [],
+        "additionalIncomeStartAge": 58,
+        "additionalIncomeEndAge": 63,
+        "additionalIncomes": [
+          {
+            "id": "sj4pibev4",
+            "name": "Consultancy",
+            "amount": 40000,
+            "startAge": 51,
+            "endAge": 53,
+            "taxAsDividend": false
+          }
+        ],
+        "savingsWorkplacePension": 0,
+        "savingsSIPP": 800000,
+        "pensionFees": 1.5
+      },
+      "createdAt": 1765702193874
+    }
+  ]
+}

@@ -557,6 +557,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                         type="standard"
                         colorClass="emerald"
                     />
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                        <SmartInput
+                            label="Current Investment Fee %"
+                            subLabel="Total ongoing charges (OCF + Platform)"
+                            value={data.currentFeePercentage || 0.75}
+                            onChange={(v) => update('currentFeePercentage', v)}
+                            min={0} max={5} step={0.05} prefix="%"
+                            colorClass="slate"
+                        >
+                            <p className="text-[10px] text-slate-400">Used for comparison in the fee calculator. Default 0.75%.</p>
+                        </SmartInput>
+                    </div>
                 </div>
             )
         },

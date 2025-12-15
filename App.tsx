@@ -65,8 +65,8 @@ import {
 
 // --- Icon Badge Color Map - All use primary teal accent ---
 const iconBadgeColors: Record<string, string> = {
-    'Income & Earnings': 'icon-badge-teal',
-    'Your Savings': 'icon-badge-teal',
+    'Income': 'icon-badge-teal',
+    'Savings, Asset and Debt': 'icon-badge-teal',
     'Pensions & Retirement': 'icon-badge-teal',
     'Housing & Debts': 'icon-badge-teal',
     'Spending & Lifestyle': 'icon-badge-teal',
@@ -74,11 +74,11 @@ const iconBadgeColors: Record<string, string> = {
 };
 
 // --- Accordion Component ---
-const AccordionItem = ({ title, icon: Icon, children, isOpen, onToggle }: any) => {
+const AccordionItem = ({ title, id, icon: Icon, children, isOpen, onToggle }: any) => {
     const badgeColor = iconBadgeColors[title] || 'icon-badge-teal';
 
     return (
-        <div className={`mb-3 rounded-xl overflow-hidden transition-all duration-300 ${isOpen ? 'bg-slate-800/50' : ''}`}>
+        <div id={id} className={`mb-3 rounded-xl overflow-hidden transition-all duration-300 ${isOpen ? 'bg-slate-800/50' : ''}`}>
             <button
                 className={`w-full flex items-center justify-between p-3 transition-all duration-300 ${isOpen
                     ? 'bg-slate-700/80'
@@ -290,7 +290,7 @@ const App: React.FC = () => {
     const [mobileTab, setMobileTab] = useState<'inputs' | 'results'>('results');
 
     // Chart State
-    const [chartMode, setChartMode] = useState<'cashflow' | 'assets'>('cashflow');
+    const [chartMode, setChartMode] = useState<'cashflow' | 'assets' | 'freedom'>('cashflow');
     const [isStacked, setIsStacked] = useState(true);
     const [assetVisibility, setAssetVisibility] = useState<AssetVisibility>({
         pension: true,
@@ -346,6 +346,7 @@ const App: React.FC = () => {
     // Calculate summary stats (using deferred for non-critical display)
     const finalResult = deferredResults[deferredResults.length - 1];
     const totalNetWorthEnd = finalResult ? finalResult.totalNetWorth : 0;
+    const totalShortfall = results.reduce((acc, r) => acc + (r.shortfall || 0), 0);
 
     const shortfallYear = results.find(r => r.shortfall > 100);
     const fundsRunOutAge = shortfallYear ? shortfallYear.age : null;
@@ -431,10 +432,17 @@ const App: React.FC = () => {
     };
 
     const addScenario = () => {
+        const name = window.prompt(
+            'Enter a name for your new scenario:\n\n(Tip: You can rename scenarios anytime using the pencil icon)',
+            `${activeScenario.name} (Copy)`
+        );
+
+        if (!name) return; // User cancelled
+
         const newId = Math.random().toString(36).substr(2, 9);
         const newScenario: Scenario = {
             id: newId,
-            name: `${activeScenario.name} (Copy)`,
+            name: name.trim() || `${activeScenario.name} (Copy)`,
             data: { ...activeScenario.data }, // Deep copy inputs
             createdAt: Date.now()
         };
@@ -459,7 +467,17 @@ const App: React.FC = () => {
     };
 
     const toggleSection = (section: string) => {
-        setActiveSection(activeSection === section ? '' : section);
+        const isOpening = activeSection !== section;
+        setActiveSection(isOpening ? section : '');
+
+        if (isOpening) {
+            setTimeout(() => {
+                const el = document.getElementById(`section-${section}`);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 300);
+        }
     };
 
     const toggleAssetVisibility = (key: keyof AssetVisibility) => {
@@ -479,7 +497,8 @@ const App: React.FC = () => {
 
                 {/* Quick Controls - Key Metrics */}
                 <AccordionItem
-                    title="Quick Controls"
+                    id="section-quick-controls"
+                    title="Key Metrics"
                     icon={SlidersHorizontal}
                     isOpen={activeSection === 'quick-controls'}
                     onToggle={() => toggleSection('quick-controls')}
@@ -574,13 +593,16 @@ const App: React.FC = () => {
                                             Fee Warning
                                         </div>
                                         <div className="text-xs text-slate-200 mb-2 leading-relaxed">
-                                            If you used a cheaper broker, the compound effect of these fees would be <span className="font-bold text-red-300">{formatLargeMoney(totalOpportunityCost)}</span> over the duration of this plan.
+                                            These fees could cost you <span className="font-bold text-red-300">{formatLargeMoney(totalOpportunityCost)}</span> in lost growth.
+                                        </div>
+                                        <div className="text-[10px] text-slate-400 mb-3">
+                                            There are multiple UK regulated pension providers that would lower your fees.
                                         </div>
                                         <button
                                             onClick={() => setShowBrokerComparison(true)}
-                                            className="w-full py-1.5 bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold rounded transition shadow-sm hover:shadow-md"
+                                            className="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold rounded shadow-sm hover:shadow-md transition-colors"
                                         >
-                                            Compare Platforms
+                                            Fix this
                                         </button>
                                     </div>
                                 );
@@ -592,7 +614,8 @@ const App: React.FC = () => {
 
                 {/* PILLAR 1: INCOME */}
                 <AccordionItem
-                    title="Income & Earnings"
+                    id="section-income"
+                    title="Income"
                     icon={TrendingUp}
                     isOpen={activeSection === 'income'}
                     onToggle={() => toggleSection('income')}
@@ -638,7 +661,7 @@ const App: React.FC = () => {
                             <div className="flex justify-between items-center mb-2">
                                 <div>
                                     <div className="font-bold text-sm text-slate-800">Additional Income</div>
-                                    <div className="text-xs text-slate-400">Side hustles, consulting, etc</div>
+                                    <div className="text-xs text-slate-400">Part Time, Dividends etc</div>
                                 </div>
                                 <button
                                     onClick={() => {
@@ -789,10 +812,11 @@ const App: React.FC = () => {
 
                 {/* PILLAR 2: PENSIONS & RETIREMENT */}
                 < AccordionItem
+                    id="section-pensions-retirement"
                     title="Pensions & Retirement"
-                    icon={Sunset}
-                    isOpen={activeSection === 'pension'}
-                    onToggle={() => toggleSection('pension')}
+                    icon={Briefcase}
+                    isOpen={activeSection === 'pensions-retirement'}
+                    onToggle={() => toggleSection('pensions-retirement')}
                 >
                     {/* State Pension (UK) */}
                     <div className="glass-card p-3 rounded-xl card-hover mb-4">
@@ -1052,10 +1076,10 @@ const App: React.FC = () => {
 
                 {/* PILLAR 3: SAVINGS & DEBTS */}
                 < AccordionItem
-                    title="Your Savings"
+                    id="section-assets"
+                    title="Savings, Asset and Debt"
                     icon={Wallet}
-                    isOpen={activeSection === 'assets'
-                    }
+                    isOpen={activeSection === 'assets'}
                     onToggle={() => toggleSection('assets')}
                 >
                     <div className="space-y-2">
@@ -1198,6 +1222,7 @@ const App: React.FC = () => {
 
                 {/* PILLAR 4: LIFE & SPENDING */}
                 < AccordionItem
+                    id="section-spending"
                     title="Spending & Lifestyle"
                     icon={Home}
                     isOpen={activeSection === 'spending'}
@@ -1306,7 +1331,7 @@ const App: React.FC = () => {
                         value={inputs.annualSpending}
                         onChange={v => updateInput('annualSpending', v)}
                         min={10000}
-                        max={100000}
+                        max={200000}
                         step={500}
                         prefix="£"
                         tooltip="Your annual spending in today's money, excluding housing costs. We automatically account for inflation and optional tapering in old age."
@@ -1385,7 +1410,7 @@ const App: React.FC = () => {
                                             </div>
                                             <div>
                                                 <span className="font-semibold text-slate-700">{e.name}</span>
-                                                <span className="text-slate-400 ml-2">Age {e.age}{e.isRecurring && e.endAge ? `-${e.endAge}` : ''}</span>
+                                                <span className="text-slate-400 ml-2">Age {e.age}{e.isRecurring && e.endAge ? `- ${e.endAge} ` : ''}</span>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
@@ -1417,6 +1442,7 @@ const App: React.FC = () => {
 
                 {/* PILLAR 5: FINE-TUNING */}
                 < AccordionItem
+                    id="section-config"
                     title="Assumptions and Strategy"
                     icon={Settings}
                     isOpen={activeSection === 'config'}
@@ -1453,13 +1479,13 @@ const App: React.FC = () => {
                                 <div className="flex bg-slate-100 rounded-xl p-0.5 border border-slate-200">
                                     <button
                                         onClick={() => updateInput('pensionLumpSumMode', 'drip')}
-                                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${inputs.pensionLumpSumMode === 'drip' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        className={`px - 3 py - 1.5 text - xs font - bold rounded - lg transition ${inputs.pensionLumpSumMode === 'drip' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'} `}
                                     >
                                         Drip Feed
                                     </button>
                                     <button
                                         onClick={() => updateInput('pensionLumpSumMode', 'upfront')}
-                                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${inputs.pensionLumpSumMode === 'upfront' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        className={`px - 3 py - 1.5 text - xs font - bold rounded - lg transition ${inputs.pensionLumpSumMode === 'upfront' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'} `}
                                     >
                                         All at Once
                                     </button>
@@ -1489,7 +1515,7 @@ const App: React.FC = () => {
                         min={0} max={10} step={0.5}
                         value={inputs.inflation}
                         onChange={v => updateInput('inflation', v)}
-                        formatValue={v => `${v}%`}
+                        formatValue={v => `${v}% `}
                     />
 
                     <div className="my-4 pt-4 border-t border-white/10">
@@ -1500,7 +1526,7 @@ const App: React.FC = () => {
                             min={0} max={10} step={0.25}
                             value={inputs.growthCash}
                             onChange={v => updateInput('growthCash', v)}
-                            formatValue={v => `${v}%`}
+                            formatValue={v => `${v}% `}
                         />
                         <SliderInput
                             label="ISA / GIA Growth"
@@ -1510,14 +1536,14 @@ const App: React.FC = () => {
                                 updateInput('growthISA', v);
                                 updateInput('growthGIA', v);
                             }}
-                            formatValue={v => `${v}%`}
+                            formatValue={v => `${v}% `}
                         />
                         <SliderInput
                             label="Pension Growth"
                             min={0} max={12} step={0.25}
                             value={inputs.growthPension}
                             onChange={v => updateInput('growthPension', v)}
-                            formatValue={v => `${v}%`}
+                            formatValue={v => `${v}% `}
                         />
                     </div>
 
@@ -1535,6 +1561,9 @@ const App: React.FC = () => {
             <BrokerComparison
                 userInputs={inputs}
                 onBack={() => setShowBrokerComparison(false)}
+                scenarios={scenarios}
+                activeScenarioId={activeScenarioId}
+                onScenarioChange={setActiveScenarioId}
             />
         );
     }
@@ -1578,14 +1607,12 @@ const App: React.FC = () => {
                                 <Pencil size={12} className="text-slate-600 group-hover:text-slate-400 transition" />
                             </button>
 
-                            {scenarios.length === 1 && (
-                                <button
-                                    onClick={addScenario}
-                                    className="text-xs text-teal-400 hover:text-teal-300 font-medium hover:underline ml-1"
-                                >
-                                    + New
-                                </button>
-                            )}
+                            <button
+                                onClick={addScenario}
+                                className="text-xs text-teal-400 hover:text-teal-300 font-medium hover:underline ml-1"
+                            >
+                                + New Scenario
+                            </button>
                         </div>
                     </div>
 
@@ -1651,13 +1678,22 @@ const App: React.FC = () => {
 
                 {/* --- Mobile Impact Bar --- */}
                 {mobileTab === 'inputs' && (
-                    <div className={`md:hidden px-4 py-3 flex items-center justify-between text-xs sticky top-0 z-10 shadow-lg backdrop-blur-lg ${fundsRunOutAge
+                    <div className={`md:hidden px - 4 py - 3 flex items - center justify - between text - xs sticky top - 0 z - 10 shadow - lg backdrop - blur - lg ${fundsRunOutAge
                         ? 'bg-red-600 text-white'
                         : 'bg-teal-600 text-white'
-                        }`}>
+                        } `}>
                         <div className="flex flex-col">
-                            <span className="opacity-80 text-[10px] font-medium uppercase tracking-wide">Projected Legacy</span>
-                            <span className="font-bold text-lg number-display">{formatLargeMoney(totalNetWorthEnd)}</span>
+                            {fundsRunOutAge ? (
+                                <>
+                                    <span className="opacity-80 text-[10px] font-medium uppercase tracking-wide text-red-100">Projected Gap</span>
+                                    <span className="font-bold text-lg number-display text-white">-{formatLargeMoney(totalShortfall)}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="opacity-80 text-[10px] font-medium uppercase tracking-wide">Projected Legacy</span>
+                                    <span className="font-bold text-lg number-display">{formatLargeMoney(totalNetWorthEnd)}</span>
+                                </>
+                            )}
                         </div>
                         <div className="flex flex-col items-end">
                             <span className="opacity-80 text-[10px] font-medium uppercase tracking-wide">Funds Last</span>
@@ -1707,7 +1743,7 @@ const App: React.FC = () => {
                                 className={`px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition-all border-b-2 ${chartMode === 'cashflow'
                                     ? 'text-teal-600 border-teal-600 bg-teal-50/50'
                                     : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-100'
-                                    }`}
+                                    } `}
                             >
                                 <BarChart2 size={16} /> Cash Flow
                             </button>
@@ -1716,7 +1752,7 @@ const App: React.FC = () => {
                                 className={`px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition-all border-b-2 ${chartMode === 'assets'
                                     ? 'text-teal-600 border-teal-600 bg-teal-50/50'
                                     : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-100'
-                                    }`}
+                                    } `}
                             >
                                 <LineChart size={16} /> Asset Value
                             </button>
@@ -1725,124 +1761,82 @@ const App: React.FC = () => {
                                 className={`px-4 py-2.5 text-sm font-semibold flex items-center gap-2 transition-all border-b-2 ${chartMode === 'freedom'
                                     ? 'text-teal-600 border-teal-600 bg-teal-50/50'
                                     : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-100'
-                                    }`}
+                                    } `}
                             >
                                 <TrendingUp size={16} /> Net Position
                             </button>
                         </div>
-                    </div>
 
-                    {/* Chart View Config */}
-                    <div className="px-4 md:px-6 pt-4 pb-2 flex flex-col md:flex-row items-start md:items-center justify-between bg-slate-50 gap-4">
-
-                        {/* Asset Controls (Only visible in 'assets' mode) */}
-                        {chartMode === 'assets' && (
-                            <div className="w-full md:w-auto overflow-x-auto pb-2 md:pb-0 md:mx-4 flex-1 md:flex md:justify-center min-w-0">
-                                <div className="flex items-center gap-3 bg-white px-3 py-1.5 border border-slate-200 rounded-xl shadow-sm whitespace-nowrap min-w-max">
-                                    <button
-                                        onClick={() => setIsStacked(!isStacked)}
-                                        className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-medium text-slate-700 hover:bg-slate-100 transition shadow-sm mr-2"
-                                    >
-                                        {isStacked ? <Layers size={14} className="text-blue-600" /> : <Activity size={14} className="text-blue-600" />}
-                                        {isStacked ? 'Stacked' : 'Lines'}
-                                    </button>
-                                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                                    <span className="text-xs font-bold text-slate-400 uppercase mr-1">Show:</span>
-                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-slate-700 select-none">
-                                        <input type="checkbox" checked={assetVisibility.total} onChange={() => toggleAssetVisibility('total')} className="rounded text-slate-800 focus:ring-slate-800" hidden={isStacked} />
-                                        <span className={isStacked ? "hidden" : "block"}>Total Wealth</span>
-                                    </label>
-                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-yellow-600 select-none">
-                                        <input type="checkbox" checked={assetVisibility.pension} onChange={() => toggleAssetVisibility('pension')} className="rounded text-yellow-600 focus:ring-yellow-600" />
-                                        Pension
-                                    </label>
-                                    <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-indigo-600 select-none">
-                                        <input type="checkbox" checked={assetVisibility.isa} onChange={() => toggleAssetVisibility('isa')} className="rounded text-indigo-600 focus:ring-indigo-600" />
-                                        ISA
-                                    </label>
-                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-emerald-600 select-none">
-                                        <input type="checkbox" checked={assetVisibility.gia} onChange={() => toggleAssetVisibility('gia')} className="rounded text-emerald-600 focus:ring-emerald-600" />
-                                        GIA
-                                    </label>
-                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-medium text-lime-600 select-none">
-                                        <input type="checkbox" checked={assetVisibility.cash} onChange={() => toggleAssetVisibility('cash')} className="rounded text-lime-600 focus:ring-lime-600" />
-                                        Cash
-                                    </label>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* 3. Right: Tax Estimate Dropdown */}
-                        <div className="relative w-full md:w-auto flex justify-end flex-none">
-                            <button
-                                onClick={() => setShowTaxYearDropdown(!showTaxYearDropdown)}
-                                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm font-semibold text-slate-600 hover:bg-slate-50 transition shadow-sm"
-                                title="View tax calculation for a specific year"
-                            >
-                                <Calculator size={16} />
-                                <span className="hidden md:inline">Tax Estimate</span>
-                                <ChevronDown size={14} className={`transition-transform ${showTaxYearDropdown ? 'rotate-180' : ''}`} />
-                            </button>
-                            {showTaxYearDropdown && (
-                                <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto min-w-[180px]">
-                                    <div className="p-2 border-b border-slate-100">
-                                        <p className="text-[10px] text-slate-400 font-medium">Select a year to view tax calculation</p>
+                        {/* Right: Tax Estimate Dropdown */}
+                        <div className="flex items-center gap-2 flex-none">
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowTaxYearDropdown(!showTaxYearDropdown)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs md:text-sm font-semibold text-slate-600 hover:bg-slate-50 transition shadow-sm"
+                                    title="View tax calculation for a specific year"
+                                >
+                                    <Calculator size={16} />
+                                    <span className="hidden md:inline">Tax Estimate</span>
+                                    <ChevronDown size={14} className={`transition-transform ${showTaxYearDropdown ? 'rotate-180' : ''}`} />
+                                </button>
+                                {showTaxYearDropdown && (
+                                    <div className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto min-w-[180px]">
+                                        <div className="p-2 border-b border-slate-100">
+                                            <p className="text-[10px] text-slate-400 font-medium">Select a year to view tax calculation</p>
+                                        </div>
+                                        {deferredResults.map((yr, idx) => (
+                                            <button
+                                                key={`${yr.age}-${idx}`}
+                                                onClick={() => {
+                                                    setSelectedTaxYear(yr);
+                                                    setShowTaxYearDropdown(false);
+                                                }}
+                                                className="w-full px-3 py-2 text-left text-xs hover:bg-slate-50 flex justify-between items-center"
+                                            >
+                                                <span className="font-medium text-slate-700">Age {yr.age}</span>
+                                                <span className="text-slate-400">{yr.year}</span>
+                                            </button>
+                                        ))}
                                     </div>
-                                    {deferredResults.map((yr, idx) => (
-                                        <button
-                                            key={`${yr.age}-${idx}`}
-                                            onClick={() => {
-                                                setSelectedTaxYear(yr);
-                                                setShowTaxYearDropdown(false);
-                                            }}
-                                            className="w-full px-3 py-2 text-left text-xs hover:bg-slate-50 flex justify-between items-center"
-                                        >
-                                            <span className="font-medium text-slate-700">Age {yr.age}</span>
-                                            <span className="text-slate-400">{yr.year}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                    {/* Main Chart Area */}
-                    <div className="flex-1 px-4 md:px-6 pb-20 md:pb-6 pt-4 flex flex-col min-h-0">
+                    {/* Chart Explainer Text */}
+                    <div className="mb-4">
+                        {chartMode === 'cashflow' && (
+                            <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
+                                <span className="font-bold text-slate-800">Cash Flow:</span> Tracks annual money in (<span className="text-emerald-600 font-medium">bars above line</span>) vs. money out (<span className="text-slate-500 font-medium">bars below line</span>). Use this to identify years where expenses might exceed income.
+                            </p>
+                        )}
+                        {chartMode === 'assets' && (
+                            <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
+                                <span className="font-bold text-slate-800">Asset Value:</span> Shows the projected total value of your assets over time. See how <span className="text-indigo-600 font-medium">compound growth</span> builds your wealth across Pension, ISA, and other pots.
+                            </p>
+                        )}
+                        {chartMode === 'freedom' && (
+                            <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
+                                <span className="font-bold text-slate-800">Net Position:</span> Your path to Financial Freedom. The <span className="text-emerald-600 font-medium">Green Line</span> shows passive investment growth. When it crosses above <span className="text-slate-800 font-medium">Total Expenses</span>, your assets can support your lifestyle.
+                            </p>
+                        )}
+                    </div>
 
-                        {/* Chart Explainer Text */}
-                        <div className="mb-4">
-                            {chartMode === 'cashflow' && (
-                                <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
-                                    <span className="font-bold text-slate-800">Cash Flow:</span> Tracks annual money in (<span className="text-emerald-600 font-medium">bars above line</span>) vs. money out (<span className="text-slate-500 font-medium">bars below line</span>). Use this to identify years where expenses might exceed income.
-                                </p>
-                            )}
-                            {chartMode === 'assets' && (
-                                <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
-                                    <span className="font-bold text-slate-800">Asset Value:</span> Shows the projected total value of your assets over time. See how <span className="text-indigo-600 font-medium">compound growth</span> builds your wealth across Pension, ISA, and other pots.
-                                </p>
-                            )}
-                            {chartMode === 'freedom' && (
-                                <p className="text-sm text-slate-600 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
-                                    <span className="font-bold text-slate-800">Net Position:</span> Your path to Financial Freedom. The <span className="text-emerald-600 font-medium">Green Line</span> shows passive investment growth. When it crosses above <span className="text-slate-800 font-medium">Total Expenses</span>, your assets can support your lifestyle.
-                                </p>
-                            )}
-                        </div>
-
-                        <div className="flex-1 bg-white rounded-xl shadow-xl p-3 md:p-5 min-h-0">
-                            <ResultsChart
-                                data={deferredResults}
-                                mode={chartMode}
-                                assetVisibility={assetVisibility}
-                                pensionAccessAge={inputs.pensionAccessAge}
-                                retirementAge={inputs.retirementAge}
-                                mortgageEndAge={inputs.housingMode === 'mortgage' && inputs.mortgages?.length > 0
-                                    ? Math.max(...inputs.mortgages.map(m => m.endAge || 0))
-                                    : (inputs.mortgageEndAge || 0)}
-                                events={inputs.events}
-                                stacked={isStacked}
-                            />
-                        </div>
+                    <div className="flex-1 bg-white rounded-xl shadow-xl p-3 md:p-5 min-h-0">
+                        <ResultsChart
+                            data={deferredResults}
+                            mode={chartMode}
+                            assetVisibility={assetVisibility}
+                            pensionAccessAge={inputs.pensionAccessAge}
+                            retirementAge={inputs.retirementAge}
+                            mortgageEndAge={inputs.housingMode === 'mortgage' && inputs.mortgages?.length > 0
+                                ? Math.max(...inputs.mortgages.map(m => m.endAge || 0))
+                                : (inputs.mortgageEndAge || 0)}
+                            events={inputs.events}
+                            stacked={isStacked}
+                            onToggleVisibility={toggleAssetVisibility}
+                            onToggleStacked={() => setIsStacked(!isStacked)}
+                        />
                     </div>
                 </div>
             </div>

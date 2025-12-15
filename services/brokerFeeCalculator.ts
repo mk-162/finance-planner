@@ -12,6 +12,7 @@ export interface CalculatorInputs {
     investmentType: InvestmentType;
     internationalTrading: boolean;
     accountTypes: AccountType[];
+    currentFeePercentage?: number; // New optional field
 }
 
 export interface YearlyBreakdown {

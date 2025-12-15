@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, AlertTriangle, Trophy, TrendingDown, ExternalLink, Info } from 'lucide-react';
-import { UserInputs } from '../types';
-import { BROKER_PLATFORMS } from '../data/brokerPlatforms';
+import { UserInputs, Scenario } from '../types';
+import { BROKER_PLATFORMS, BrokerPlatform } from '../data/brokerPlatforms';
 import {
     CalculatorInputs,
     PlatformResult,
@@ -9,6 +10,7 @@ import {
     getRecommendations,
     formatCurrency,
     calculateSavings,
+    calculateFeeDrag,
 } from '../services/brokerFeeCalculator';
 import { BrokerCalculatorInputs } from '../components/broker/BrokerCalculatorInputs';
 import { BrokerResultsTable } from '../components/broker/BrokerResultsTable';
@@ -17,11 +19,17 @@ import { BrokerFeeDragChart } from '../components/broker/BrokerFeeDragChart';
 interface BrokerComparisonProps {
     userInputs: UserInputs;
     onBack: () => void;
+    scenarios: Scenario[];
+    activeScenarioId: string;
+    onScenarioChange: (id: string) => void;
 }
 
 export const BrokerComparison: React.FC<BrokerComparisonProps> = ({
     userInputs,
     onBack,
+    scenarios,
+    activeScenarioId,
+    onScenarioChange,
 }) => {
     // Pre-populate from user's Finance Planner data
     const getPrePopulatedInputs = (): CalculatorInputs => {
@@ -29,59 +37,123 @@ export const BrokerComparison: React.FC<BrokerComparisonProps> = ({
         const currentAge = currentYear - userInputs.birthYear;
         const yearsToEnd = Math.max(10, userInputs.lifeExpectancy - currentAge);
 
-        // Calculate starting portfolio from all accounts
-        const startingPortfolio =
-            (userInputs.savingsISA || 0) +
-            (userInputs.savingsPension || 0) +
-            (userInputs.savingsWorkplacePension || 0) +
-            (userInputs.savingsSIPP || 0) +
-            (userInputs.savingsGIA || 0) +
-            (userInputs.savingsCash || 0);
+        // Calculate Investable Assets (Exclude Cash)
+        const isa = userInputs.savingsISA || 0;
+        const pension = (userInputs.savingsPension || 0) + (userInputs.savingsWorkplacePension || 0) + (userInputs.savingsSIPP || 0);
+        const gia = userInputs.savingsGIA || 0;
 
-        // Calculate monthly contributions
+        const startingPortfolio = isa + pension + gia;
+
+        // Weighted Average Return
+        let weightedReturn = 7;
+        if (startingPortfolio > 0) {
+            const growthISA = userInputs.growthISA || 7;
+            const growthPension = userInputs.growthPension || 7;
+            const growthGIA = userInputs.growthGIA || 7;
+
+            weightedReturn = (
+                (isa * growthISA) +
+                (pension * growthPension) +
+                (gia * growthGIA)
+            ) / startingPortfolio;
+        } else {
+            weightedReturn = userInputs.growthPension || 7;
+        }
+
+        // Calculate monthly contributions (Exclude Cash)
         const monthlyContribution =
             (userInputs.contribISA || 0) +
             (userInputs.contribPension || 0) +
             (userInputs.contribWorkplacePension || 0) +
             (userInputs.contribSIPP || 0) +
-            (userInputs.contribGIA || 0) +
-            (userInputs.contribCash || 0);
+            (userInputs.contribGIA || 0);
 
         // Determine account types based on balances/contributions
         const accountTypes: ('isa' | 'sipp' | 'trading')[] = [];
-        if ((userInputs.savingsISA || 0) > 0 || (userInputs.contribISA || 0) > 0) {
+        if (isa > 0 || (userInputs.contribISA || 0) > 0) {
             accountTypes.push('isa');
         }
-        if (
-            (userInputs.savingsPension || 0) > 0 ||
-            (userInputs.savingsWorkplacePension || 0) > 0 ||
-            (userInputs.savingsSIPP || 0) > 0 ||
-            (userInputs.contribPension || 0) > 0
-        ) {
+        if (pension > 0 || (userInputs.contribPension || 0) > 0 || (userInputs.contribWorkplacePension || 0) > 0 || (userInputs.contribSIPP || 0) > 0) {
             accountTypes.push('sipp');
         }
-        if ((userInputs.savingsGIA || 0) > 0 || (userInputs.contribGIA || 0) > 0) {
+        if (gia > 0 || (userInputs.contribGIA || 0) > 0) {
             accountTypes.push('trading');
         }
 
         return {
-            startingPortfolio: startingPortfolio || 50000,
-            monthlyContribution: monthlyContribution || 500,
-            expectedReturn: userInputs.growthPension || 7,
+            startingPortfolio: startingPortfolio,
+            monthlyContribution: monthlyContribution,
+            expectedReturn: Number(weightedReturn.toFixed(1)),
             years: Math.min(yearsToEnd, 40),
             tradesPerYear: 12,
             investmentType: 'mixed',
             internationalTrading: false,
             accountTypes: accountTypes.length > 0 ? accountTypes : ['isa'],
+            currentFeePercentage: userInputs.currentFeePercentage || 0.75,
         };
     };
 
     const [inputs, setInputs] = useState<CalculatorInputs>(getPrePopulatedInputs);
     const [selectedPlatform, setSelectedPlatform] = useState<PlatformResult | null>(null);
 
+    // Update inputs when scenario (userInputs) changes
+    useEffect(() => {
+        setInputs(getPrePopulatedInputs());
+    }, [userInputs]);
+
     // Calculate results whenever inputs change
     const results = useMemo(() => {
         return compareAllPlatforms(BROKER_PLATFORMS, inputs);
+    }, [inputs]);
+
+    const referenceLines = useMemo(() => {
+        // Create synthetic platforms for comparison
+        const currentPlatform: BrokerPlatform = {
+            id: 'current-fee-reference',
+            name: 'Current Fees',
+            feeType: 'percentage',
+            annualFeeBase: 0,
+            annualFeeNotes: '',
+            feeTiers: [{ start: 0, end: Infinity, rate: (inputs.currentFeePercentage || 0.75) / 100 }],
+            feeCap: null,
+            tradingFeeFunds: 0,
+            tradingFeeETFs: 0,
+            tradingFeeShares: 0,
+            regularInvestingFee: 0,
+            fxFeeRate: 0,
+            fxFeeNotes: '',
+            accounts: inputs.accountTypes,
+            goodFor: '',
+            restrictions: '',
+            entryFee: 0,
+            exitFee: 0,
+        };
+
+        const industryPlatform: BrokerPlatform = {
+            id: 'industry-avg-reference',
+            name: 'Industry Average',
+            feeType: 'percentage',
+            annualFeeBase: 0,
+            annualFeeNotes: '',
+            feeTiers: [{ start: 0, end: Infinity, rate: 0.005 }], // 0.5%
+            feeCap: null,
+            tradingFeeFunds: 0,
+            tradingFeeETFs: 0,
+            tradingFeeShares: 0,
+            regularInvestingFee: 0,
+            fxFeeRate: 0,
+            fxFeeNotes: '',
+            accounts: inputs.accountTypes,
+            goodFor: '',
+            restrictions: '',
+            entryFee: 0,
+            exitFee: 0,
+        };
+
+        return {
+            currentFee: calculateFeeDrag(currentPlatform, inputs),
+            industryAverage: calculateFeeDrag(industryPlatform, inputs),
+        };
     }, [inputs]);
 
     const recommendations = useMemo(() => {
@@ -95,21 +167,21 @@ export const BrokerComparison: React.FC<BrokerComparisonProps> = ({
     }, [recommendations]);
 
     return (
-        <div className="h-screen overflow-y-scroll bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 light-scrollbar">
+        <div className="h-screen overflow-y-scroll bg-slate-900 text-slate-200 light-scrollbar">
             {/* Header */}
-            <div className="bg-white border-b border-slate-200 sticky top-0 z-10">
+            <div className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <button
                                 onClick={onBack}
-                                className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition"
+                                className="flex items-center gap-2 text-slate-400 hover:text-white transition"
                             >
                                 <ArrowLeft size={20} />
                                 <span>Back to Planner</span>
                             </button>
-                            <div className="h-6 w-px bg-slate-300" />
-                            <h1 className="text-xl font-bold text-slate-800">
+                            <div className="h-6 w-px bg-slate-700" />
+                            <h1 className="text-xl font-bold text-white hidden md:block">
                                 Lifetime Fee Impact Calculator
                             </h1>
                         </div>
@@ -119,12 +191,12 @@ export const BrokerComparison: React.FC<BrokerComparisonProps> = ({
 
             <div className="max-w-7xl mx-auto px-4 py-6">
                 {/* Disclaimer Banner */}
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                <div className="bg-amber-900/20 border border-amber-800/50 rounded-xl p-4 mb-6">
                     <div className="flex items-start gap-3">
-                        <AlertTriangle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                        <AlertTriangle size={20} className="text-amber-500 flex-shrink-0 mt-0.5" />
                         <div>
-                            <p className="font-semibold text-amber-800 text-sm">For illustration only</p>
-                            <p className="text-xs text-amber-700 mt-1">
+                            <p className="font-semibold text-amber-200 text-sm">For illustration only</p>
+                            <p className="text-xs text-amber-400/80 mt-1">
                                 Based on published platform rates as of December 2024. Does not include fund OCFs,
                                 stamp duty, bid-ask spreads. Verify fees on platform websites before investing.
                                 Capital at risk when investing. Past performance doesn't guarantee future results.
@@ -133,74 +205,52 @@ export const BrokerComparison: React.FC<BrokerComparisonProps> = ({
                     </div>
                 </div>
 
-                {/* Hero Stats */}
-                {recommendations && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                        {/* Cheapest */}
-                        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                                <Trophy size={20} className="text-green-600" />
-                                <span className="text-xs font-semibold text-green-700 uppercase">Cheapest</span>
-                            </div>
-                            <div className="text-xl font-bold text-green-800">
-                                {recommendations.cheapest.platform.name}
-                            </div>
-                            <div className="text-sm text-green-700 mt-1">
-                                Fee Drag: {formatCurrency(recommendations.cheapest.summary.totalFeeDrag)}
-                            </div>
-                            <div className="text-lg font-mono font-semibold text-green-800 mt-2">
-                                Final: {formatCurrency(recommendations.cheapest.summary.finalValue)}
-                            </div>
+                {/* Graph Summary Header */}
+                <div className="bg-slate-800 rounded-xl p-6 mb-6 border border-slate-700">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                            <h2 className="text-xl font-bold text-white mb-2">Projected Impact of Fees</h2>
+                            <p className="text-slate-300 max-w-2xl text-sm leading-relaxed">
+                                The graph below projects how your portfolio (Capital + Growth) is reduced by fees over {inputs.years} years.
+                                We compare your <span className="text-amber-400 font-bold">Current Fees ({(inputs.currentFeePercentage || 0.75).toFixed(2)}%)</span> against
+                                the market's <span className="text-blue-400 font-bold"> Lowest</span> and
+                                <span className="text-red-400 font-bold"> Highest</span> cost platforms, plus an
+                                <span className="text-slate-400 font-bold"> Industry Average (0.5%)</span> benchmark.
+                            </p>
                         </div>
-
-                        {/* You Save */}
-                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                                <TrendingDown size={20} className="text-blue-600" />
-                                <span className="text-xs font-semibold text-blue-700 uppercase">Potential Savings</span>
+                        {recommendations && (
+                            <div className="text-right">
+                                <div className="text-xs text-slate-400 uppercase font-semibold mb-1">Max Potential Savings</div>
+                                <div className="text-3xl font-bold text-emerald-400">
+                                    {formatCurrency(savings)}
+                                </div>
+                                <div className="text-xs text-slate-500">vs most expensive option</div>
                             </div>
-                            <div className="text-2xl font-bold text-blue-800">
-                                {formatCurrency(savings)}
-                            </div>
-                            <div className="text-sm text-blue-700 mt-1">
-                                vs most expensive platform
-                            </div>
-                            <div className="text-xs text-blue-600 mt-2">
-                                Over {inputs.years} years with your inputs
-                            </div>
-                        </div>
-
-                        {/* Most Expensive */}
-                        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                                <AlertTriangle size={20} className="text-red-600" />
-                                <span className="text-xs font-semibold text-red-700 uppercase">Most Expensive</span>
-                            </div>
-                            <div className="text-xl font-bold text-red-800">
-                                {recommendations.mostExpensive.platform.name}
-                            </div>
-                            <div className="text-sm text-red-700 mt-1">
-                                Fee Drag: {formatCurrency(recommendations.mostExpensive.summary.totalFeeDrag)}
-                            </div>
-                            <div className="text-lg font-mono font-semibold text-red-800 mt-2">
-                                Final: {formatCurrency(recommendations.mostExpensive.summary.finalValue)}
-                            </div>
-                        </div>
+                        )}
                     </div>
-                )}
+                </div>
 
                 {/* Main Content Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Left Column - Calculator Inputs */}
                     <div className="lg:col-span-1">
-                        <BrokerCalculatorInputs inputs={inputs} onChange={setInputs} />
+                        <h3 className="text-lg font-bold text-white mb-4">Calculator Inputs</h3>
+
+                        {/* Import Banner */}
+                        <BrokerCalculatorInputs
+                            inputs={inputs}
+                            onChange={setInputs}
+                            scenarios={scenarios}
+                            activeScenarioId={activeScenarioId}
+                            onScenarioChange={onScenarioChange}
+                        />
 
                         {/* Info Card */}
-                        <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                        <div className="mt-4 bg-slate-800 border border-slate-700 rounded-xl p-4">
                             <div className="flex items-start gap-2">
-                                <Info size={16} className="text-slate-500 flex-shrink-0 mt-0.5" />
-                                <div className="text-xs text-slate-600">
-                                    <p className="font-semibold mb-1">What is Fee Drag?</p>
+                                <Info size={16} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                                <div className="text-xs text-slate-300">
+                                    <p className="font-semibold mb-1 text-white">What is Fee Drag?</p>
                                     <p>
                                         Fee drag is the total impact of platform fees on your portfolio.
                                         It includes both the fees you pay AND the growth you lose because
@@ -218,7 +268,7 @@ export const BrokerComparison: React.FC<BrokerComparisonProps> = ({
                     {/* Right Column - Results */}
                     <div className="lg:col-span-2 space-y-6">
                         {/* Chart */}
-                        <BrokerFeeDragChart results={results} />
+                        <BrokerFeeDragChart results={results} referenceLines={referenceLines} />
 
                         {/* Results Table */}
                         <BrokerResultsTable
@@ -243,18 +293,18 @@ export const BrokerComparison: React.FC<BrokerComparisonProps> = ({
             {/* Platform Detail Modal */}
             {selectedPlatform && (
                 <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
                     onClick={() => setSelectedPlatform(null)}
                 >
                     <div
-                        className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"
+                        className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="p-4 border-b border-slate-100 bg-slate-50">
-                            <h2 className="text-lg font-bold text-slate-800">
+                        <div className="p-4 border-b border-slate-800 bg-slate-800/50">
+                            <h2 className="text-lg font-bold text-white">
                                 {selectedPlatform.platform.name}
                             </h2>
-                            <p className="text-sm text-slate-500">
+                            <p className="text-sm text-slate-400">
                                 {selectedPlatform.platform.goodFor}
                             </p>
                         </div>
@@ -262,39 +312,39 @@ export const BrokerComparison: React.FC<BrokerComparisonProps> = ({
                         <div className="p-5 space-y-4">
                             {/* Fee Summary */}
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-slate-50 p-3 rounded-lg">
+                                <div className="bg-slate-800 p-3 rounded-lg border border-slate-700">
                                     <div className="text-xs text-slate-500 uppercase">Year 1 Fee</div>
-                                    <div className="text-lg font-bold text-slate-800">
+                                    <div className="text-lg font-bold text-white">
                                         {formatCurrency(selectedPlatform.summary.year1Fee)}
                                     </div>
                                 </div>
-                                <div className="bg-slate-50 p-3 rounded-lg">
+                                <div className="bg-slate-800 p-3 rounded-lg border border-slate-700">
                                     <div className="text-xs text-slate-500 uppercase">Total Fees ({inputs.years}y)</div>
-                                    <div className="text-lg font-bold text-slate-800">
+                                    <div className="text-lg font-bold text-white">
                                         {formatCurrency(selectedPlatform.summary.totalFeesPaid)}
                                     </div>
                                 </div>
-                                <div className="bg-amber-50 p-3 rounded-lg">
-                                    <div className="text-xs text-amber-600 uppercase">Lost Growth</div>
-                                    <div className="text-lg font-bold text-amber-700">
+                                <div className="bg-amber-900/20 p-3 rounded-lg border border-amber-800/30">
+                                    <div className="text-xs text-amber-500 uppercase">Lost Growth</div>
+                                    <div className="text-lg font-bold text-amber-400">
                                         {formatCurrency(selectedPlatform.summary.opportunityCost)}
                                     </div>
                                 </div>
-                                <div className="bg-red-50 p-3 rounded-lg">
-                                    <div className="text-xs text-red-600 uppercase">Total Fee Drag</div>
-                                    <div className="text-lg font-bold text-red-700">
+                                <div className="bg-red-900/20 p-3 rounded-lg border border-red-800/30">
+                                    <div className="text-xs text-red-500 uppercase">Total Fee Drag</div>
+                                    <div className="text-lg font-bold text-red-400">
                                         {formatCurrency(selectedPlatform.summary.totalFeeDrag)}
                                     </div>
                                 </div>
                             </div>
 
                             {/* Final Value */}
-                            <div className="bg-green-50 p-4 rounded-lg text-center">
-                                <div className="text-xs text-green-600 uppercase">Projected Final Value</div>
-                                <div className="text-2xl font-bold text-green-800">
+                            <div className="bg-emerald-900/20 border border-emerald-800/30 p-4 rounded-lg text-center">
+                                <div className="text-xs text-emerald-500 uppercase">Projected Final Value</div>
+                                <div className="text-2xl font-bold text-emerald-300">
                                     {formatCurrency(selectedPlatform.summary.finalValue)}
                                 </div>
-                                <div className="text-xs text-green-600 mt-1">
+                                <div className="text-xs text-emerald-500 mt-1">
                                     vs {formatCurrency(selectedPlatform.summary.finalValueNoFees)} without fees
                                 </div>
                             </div>
@@ -302,36 +352,36 @@ export const BrokerComparison: React.FC<BrokerComparisonProps> = ({
                             {/* Platform Details */}
                             <div className="space-y-2 text-sm">
                                 <div className="flex justify-between">
-                                    <span className="text-slate-600">Fee Type</span>
-                                    <span className="text-slate-800 capitalize">{selectedPlatform.platform.feeType}</span>
+                                    <span className="text-slate-400">Fee Type</span>
+                                    <span className="text-white capitalize">{selectedPlatform.platform.feeType}</span>
                                 </div>
                                 {selectedPlatform.platform.annualFeeNotes && (
                                     <div className="flex justify-between">
-                                        <span className="text-slate-600">Notes</span>
-                                        <span className="text-slate-800 text-right max-w-[60%]">
+                                        <span className="text-slate-400">Notes</span>
+                                        <span className="text-slate-200 text-right max-w-[60%]">
                                             {selectedPlatform.platform.annualFeeNotes}
                                         </span>
                                     </div>
                                 )}
                                 <div className="flex justify-between">
-                                    <span className="text-slate-600">Accounts</span>
-                                    <span className="text-slate-800">
+                                    <span className="text-slate-400">Accounts</span>
+                                    <span className="text-slate-200">
                                         {selectedPlatform.platform.accounts.map(a => a.toUpperCase()).join(', ')}
                                     </span>
                                 </div>
                                 {selectedPlatform.platform.restrictions && (
                                     <div className="flex justify-between">
-                                        <span className="text-slate-600">Restrictions</span>
-                                        <span className="text-amber-600">{selectedPlatform.platform.restrictions}</span>
+                                        <span className="text-slate-400">Restrictions</span>
+                                        <span className="text-amber-500">{selectedPlatform.platform.restrictions}</span>
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+                        <div className="p-4 border-t border-slate-800 bg-slate-800/50 flex gap-3">
                             <button
                                 onClick={() => setSelectedPlatform(null)}
-                                className="flex-1 bg-slate-200 text-slate-800 py-2.5 rounded-lg font-medium hover:bg-slate-300 transition"
+                                className="flex-1 bg-slate-700 text-white py-2.5 rounded-lg font-medium hover:bg-slate-600 transition"
                             >
                                 Close
                             </button>

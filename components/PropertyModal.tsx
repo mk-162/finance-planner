@@ -17,6 +17,8 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
         name: '', value: 250000, monthlyRent: 1200, monthlyCost: 0, growthRate: 3
     });
 
+    const [displayMode, setDisplayMode] = useState<'monthly' | 'yearly'>('monthly');
+
     // Populate / Reset
     useEffect(() => {
         if (isOpen) {
@@ -39,7 +41,9 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
             value: newProp.value,
             monthlyRent: newProp.monthlyRent || 0,
             monthlyCost: newProp.monthlyCost || 0,
-            growthRate: newProp.growthRate || 0
+            growthRate: newProp.growthRate || 0,
+            sellAge: newProp.sellAge,
+            sellPrice: newProp.sellPrice
         };
 
         if (editProperty) {
@@ -69,8 +73,10 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
                         Add buy-to-let or investment properties. Rental income (net of costs) will be included in your projections.
                     </p>
 
-                    <div className="bg-slate-50 p-4 rounded-sm border border-slate-200 shadow-sm">
-                        <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-slate-50 p-4 rounded-sm border border-slate-200 shadow-sm space-y-4">
+
+                        {/* Core Details */}
+                        <div className="grid grid-cols-2 gap-3">
                             <input
                                 type="text"
                                 placeholder="Name (e.g. London Flat)"
@@ -91,7 +97,6 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
                                 </div>
                             </div>
 
-                            {/* Growth Rate moved here to balance grid */}
                             <div className="flex flex-col gap-1">
                                 <label className="text-[10px] uppercase font-bold text-slate-500">Growth Rate</label>
                                 <div className="relative">
@@ -105,37 +110,105 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
                                     <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
                                 </div>
                             </div>
+                        </div>
 
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-500">Monthly Rent</label>
-                                <div className="relative">
-                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">£</span>
-                                    <input
-                                        type="number"
-                                        className="w-full text-sm p-2.5 pl-6 border border-slate-300 rounded-sm outline-none focus:ring-2 focus:ring-blue-100"
-                                        value={newProp.monthlyRent}
-                                        onChange={e => setNewProp({ ...newProp, monthlyRent: Number(e.target.value) })}
-                                    />
+                        {/* Income & Costs */}
+                        <div>
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="text-[10px] uppercase font-bold text-slate-500">Income & Costs</label>
+                                <div className="flex bg-slate-200/50 rounded-lg p-0.5">
+                                    <button
+                                        onClick={() => setDisplayMode('monthly')}
+                                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition ${displayMode === 'monthly' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                    >
+                                        / Monthly
+                                    </button>
+                                    <button
+                                        onClick={() => setDisplayMode('yearly')}
+                                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition ${displayMode === 'yearly' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                    >
+                                        / Yearly
+                                    </button>
                                 </div>
                             </div>
 
-                            <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-500">Monthly Costs</label>
-                                <div className="relative">
-                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">£</span>
-                                    <input
-                                        type="number"
-                                        className="w-full text-sm p-2.5 pl-6 border border-slate-300 rounded-sm outline-none focus:ring-2 focus:ring-blue-100"
-                                        value={newProp.monthlyCost}
-                                        onChange={e => setNewProp({ ...newProp, monthlyCost: Number(e.target.value) })}
-                                    />
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-slate-400">
+                                        {displayMode === 'monthly' ? 'Monthly Rent' : 'Annual Rent'}
+                                    </label>
+                                    <div className="relative">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">£</span>
+                                        <input
+                                            type="number"
+                                            className="w-full text-sm p-2.5 pl-6 border border-slate-300 rounded-sm outline-none focus:ring-2 focus:ring-blue-100"
+                                            value={displayMode === 'monthly' ? (newProp.monthlyRent || 0) : (newProp.monthlyRent || 0) * 12}
+                                            onChange={e => {
+                                                const val = Number(e.target.value);
+                                                setNewProp({ ...newProp, monthlyRent: displayMode === 'monthly' ? val : val / 12 });
+                                            }}
+                                        />
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div className="col-span-2 text-right text-xs font-semibold text-slate-500">
-                                Net Income: <span className="text-emerald-600">£{((newProp.monthlyRent || 0) - (newProp.monthlyCost || 0)).toLocaleString()}</span>/mo
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-slate-400">
+                                        {displayMode === 'monthly' ? 'Monthly Costs' : 'Annual Costs'}
+                                    </label>
+                                    <div className="relative">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">£</span>
+                                        <input
+                                            type="number"
+                                            className="w-full text-sm p-2.5 pl-6 border border-slate-300 rounded-sm outline-none focus:ring-2 focus:ring-blue-100"
+                                            value={displayMode === 'monthly' ? (newProp.monthlyCost || 0) : (newProp.monthlyCost || 0) * 12}
+                                            onChange={e => {
+                                                const val = Number(e.target.value);
+                                                setNewProp({ ...newProp, monthlyCost: displayMode === 'monthly' ? val : val / 12 });
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="col-span-2 text-right text-xs font-semibold text-slate-500">
+                                    Net Income: <span className="text-emerald-600">£{(((newProp.monthlyRent || 0) - (newProp.monthlyCost || 0)) * (displayMode === 'monthly' ? 1 : 12)).toLocaleString()}</span>
+                                    <span className="text-[10px] text-slate-400 font-normal ml-0.5">/{displayMode === 'monthly' ? 'mo' : 'yr'}</span>
+                                </div>
                             </div>
                         </div>
+
+                        {/* Planned Disposal */}
+                        <div className="pt-2 border-t border-slate-200">
+                            <label className="text-[10px] uppercase font-bold text-slate-500 mb-2 block">Planned Disposal (Optional)</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-slate-400">Sell at Age</label>
+                                    <input
+                                        type="number"
+                                        placeholder="e.g. 65"
+                                        className="w-full text-sm p-2.5 border border-slate-300 rounded-sm outline-none focus:ring-2 focus:ring-blue-100"
+                                        value={newProp.sellAge || ''}
+                                        onChange={e => setNewProp({ ...newProp, sellAge: e.target.value ? Number(e.target.value) : undefined })}
+                                    />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] uppercase font-bold text-slate-400">Target Sale Value</label>
+                                    <div className="relative">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">£</span>
+                                        <input
+                                            type="number"
+                                            placeholder="Auto-calculated"
+                                            className="w-full text-sm p-2.5 pl-6 border border-slate-300 rounded-sm outline-none focus:ring-2 focus:ring-blue-100 placeholder:text-slate-300"
+                                            value={newProp.sellPrice || ''}
+                                            onChange={e => setNewProp({ ...newProp, sellPrice: e.target.value ? Number(e.target.value) : undefined })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="col-span-2 text-[10px] text-slate-400 italic">
+                                    Unspecified sale value defaults to current value + growth rate.
+                                </div>
+                            </div>
+                        </div>
+
                         <button
                             onClick={handleAdd}
                             className={`w-full text-white text-sm font-medium py-2.5 rounded-sm transition flex items-center justify-center gap-2 ${editProperty ? 'bg-blue-700 hover:bg-blue-800' : 'bg-blue-600 hover:bg-blue-700'}`}
@@ -144,6 +217,10 @@ export const PropertyModal: React.FC<PropertyModalProps> = ({
                             {editProperty ? 'Update Property' : 'Add Property'}
                         </button>
                     </div>
+
+                    <p className="text-[10px] text-slate-400 text-center mt-3">
+                        Note: Property appreciation, rent, and expenses are automatically mapped to inflation in the projection.
+                    </p>
 
                 </div>
 
